@@ -9,6 +9,10 @@ Assumptions:
  - input videos are 1080p, same format as current vids as of 8/12/21
  - videos don't start during a run
 
+Usage (preferred):
+-Navigate to root folder in powershell
+-python main.py
+
 Flowchart:
 1. Search for a course start screen - every 80 frames check if it relates to a start screen
     - you are at the starting line not moving for at least 80 frames
@@ -120,7 +124,7 @@ def main():
 
         print("Analyzing video " + videoFileName)
         gamestate = Gamestate()
-        frameNum = 47129  #debug 5915 #12749 #32350 #5400 #10141 #5000  #13000
+        frameNum = 0  #debug 5915 #12749 #32350 #5400 #10141 #5000  #13000
 
         gamestate.count = frameNum
 

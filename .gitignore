@@ -1,0 +1,10 @@
+# ignore any stats
+stats/
+
+# ignore all videos
+*.mkv
+*.mp4
+
+# python stuff
+__pycache__/
+*.py[cod]

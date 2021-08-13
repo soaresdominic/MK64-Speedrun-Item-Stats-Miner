@@ -38,7 +38,8 @@ Flowchart:
 
 
 TO DO LIST:
- - if we find wario stadium or frappe snowland - skip until black screen since there will never be an item pickup
+ - recognize race end, so you can skip x number of frames automatically to get to black screen
+    - 1st place pixel colors or TOTAL sign in top right
 
  - recognize time trials runs to be able to skip them so vids dont have to be trimmed?
  - Record the number of console resets?
@@ -103,12 +104,13 @@ class Gamestate:
 
 
 def main():
-    #For each video we have in the directory of videosToAnalyze
-    videosDirectory = './videosToAnalyze/'
     localSetup()  #grab all the pics and things for image matching
-    with open('./stats/ItemStats.csv','a') as f:
+    #will create it if not already present
+    with open('./stats/ItemStats.csv','w') as f:
         writer = csv.writer(f)
         writer.writerow(['Starting analysis on all videos - ' + str(datetime.datetime.now())])
+    #For each video we have in the directory of videosToAnalyze
+    videosDirectory = './videosToAnalyze/'
     for videoFileName in os.listdir(videosDirectory):
         global videoName
         videoName = videoFileName
@@ -124,7 +126,7 @@ def main():
 
         print("Analyzing video " + videoFileName)
         gamestate = Gamestate()
-        frameNum = 0  #debug 5915 #12749 #32350 #5400 #10141 #5000  #13000
+        frameNum = 216000  #debug 5915 #12749 #32350 #5400 #10141 #5000  #13000
 
         gamestate.count = frameNum
 
@@ -143,6 +145,11 @@ def main():
                     gamestate.count += 80
                 else:
                     continue
+            elif gamestate.currentCourse == "FrappeSnowland" or  gamestate.currentCourse == "WarioStadium":
+                #Skip to just look for black screen, since there will never be items
+                print(gamestate.count, "No items course, searching for black screen...")
+                frameNum += 40  #based on lowest black screen framecount (resets - 40 frames)
+                gamestate.count += 40
             #if we're in a course and we have not found an item - try to find an item or a black screen
             elif gamestate.foundAnItem == False and gamestate.foundGivenItem == False:
                 findAnItem(image, gamestate)
@@ -291,7 +298,7 @@ def getPlace(image, gamestate):
 def findCourse(image, gamestate):
     img_playArea = image[:, 560:]
     if gamestate.currentCourseIndex == 0:
-        potentialNextCourses = [0,1,4,8,12]
+        potentialNextCourses = [0,1,4,5,8,12]
     else:
         potentialNextCourses = [0, gamestate.currentCourseIndex + 1]
 

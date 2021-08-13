@@ -99,12 +99,14 @@ class Gamestate:
             if item[0] == "BlankItem":
                 self.blankItemIndex = i
                 break
-    
+
 
 
 
 def main():
     localSetup()  #grab all the pics and things for image matching
+    if not os.path.isdir("./stats/"):
+        os.mkdir("./stats/")
     #will create it if not already present
     with open('./stats/ItemStats.csv','w') as f:
         writer = csv.writer(f)
@@ -126,7 +128,7 @@ def main():
 
         print("Analyzing video " + videoFileName)
         gamestate = Gamestate()
-        frameNum = 216000  #debug 5915 #12749 #32350 #5400 #10141 #5000  #13000
+        frameNum = 0  #debug 5915 #12749 #32350 #5400 #10141 #5000  #13000
 
         gamestate.count = frameNum
 

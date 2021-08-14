@@ -38,9 +38,6 @@ Flowchart:
 
 
 TO DO LIST:
- - recognize race end, so you can skip x number of frames automatically to get to black screen
-    - 1st place pixel colors or TOTAL sign in top right
-
  - recognize time trials runs to be able to skip them so vids dont have to be trimmed?
  - Record the number of console resets?
  - Record the number of speedrun resets?
@@ -142,9 +139,9 @@ def main():
             #if current course is empty, loop until we find one
             if gamestate.currentCourse == "":
                 findCourse(image, gamestate)
-                if gamestate.currentCourse == "":  #didnt find one, skip 80 frames
-                    frameNum += 80
-                    gamestate.count += 80
+                if gamestate.currentCourse == "":  #didnt find one, skip 110 frames, below lap time is still for 110
+                    frameNum += 110
+                    gamestate.count += 110
                 else:
                     continue
             elif gamestate.currentCourse == "FrappeSnowland" or  gamestate.currentCourse == "WarioStadium":
@@ -251,6 +248,15 @@ def main():
             #Reset all vars in function if we find it
             if gamestate.currentCourse != "":
                 findBlackScreen(image, gamestate)
+                #if we didnt find a black screen, current course is still != ""
+                #now search for race finish
+                if gamestate.currentCourse != "":
+                    findEndOfRace(image, gamestate)
+                    #If we did find end of race, go forward ten seconds, reset all vars
+                    if gamestate.currentCourse == "":
+                        frameNum += 300
+                        gamestate.count += 300
+            
         #At the end of the current vid
         print("Done!")
         with open('./stats/ItemStats.csv','a') as f:
@@ -298,7 +304,7 @@ def getPlace(image, gamestate):
 
 
 def findCourse(image, gamestate):
-    img_playArea = image[:, 560:]
+    img_playArea = image[135:, 560:]   #135 is y value that cuts off lap / time
     if gamestate.currentCourseIndex == 0:
         potentialNextCourses = [0,1,4,5,8,12]
     else:
@@ -308,6 +314,8 @@ def findCourse(image, gamestate):
     for indexVal in potentialNextCourses:  #for each of the selected potential next courses
         course = courses[indexVal]
         template = course[1]
+        #cut top off lap / time because then we can add 30 frames to the window
+        template = template[150:, :]
         if course[0] == "BansheeBoardwalk":  #very dark, inverting seems to help
             template = 255-template
             img_playArea = 255-img_playArea
@@ -319,7 +327,7 @@ def findCourse(image, gamestate):
         #print(gamestate.count, min_val, course[0])
         if method == cv2.TM_SQDIFF_NORMED:
             #look for min
-            if min_val <= threshold:
+            if min_val <= threshold + .01:   #.01 deviation possible
                 gamestate.currentCourse = course[0]
                 gamestate.currentCourseIndex = indexVal
                 print(gamestate.count, gamestate.currentCourse)
@@ -557,7 +565,6 @@ def findNoItem(image, gamestate):
 
 
 
-#every 40 frames
 def findBlackScreen(image, gamestate):
     img_playArea = image[:, 560:]
 
@@ -573,7 +580,24 @@ def findBlackScreen(image, gamestate):
 
         gamestate.itemRoulette.clear()
         gamestate.currentCourse = ""
-        #gamestate.currentCourseIndex = 0
+        gamestate.foundAnItem = False
+        gamestate.foundNoItem = False
+        gamestate.foundBlankItem = False
+        gamestate.foundGivenItem = False
+        gamestate.inNewItemRoulette = False
+        gamestate.place = 8
+
+
+#Like finding a black screen, so do similar var resets
+def findEndOfRace(image, gamestate):
+    img_total = image[270:345, 1380:1530]
+    res = cv2.matchTemplate(img_total, total_pic, cv2.TM_SQDIFF_NORMED)
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+    #print(min_val)
+    if min_val <= .01:   #average is .005
+        print(gamestate.count, "Found end of race! Skipping 10 seconds")
+        gamestate.itemRoulette.clear()
+        gamestate.currentCourse = ""
         gamestate.foundAnItem = False
         gamestate.foundNoItem = False
         gamestate.foundBlankItem = False
@@ -592,5 +616,7 @@ def localSetup():
     itemsBooFirst = [items[3]] + items[:3] + items[4:]
     global blackScreen 
     blackScreen = cv2.imread("./otherPics/" + 'black.png')
+    global total_pic
+    total_pic = cv2.imread("./otherPics/" + 'total.png')
 
 main()

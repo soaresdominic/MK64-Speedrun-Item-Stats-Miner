@@ -38,6 +38,8 @@ Flowchart:
 
 
 TO DO LIST:
+ - more efficient looping through list of items and things? most python-algorithmically ineffiencent aspect
+
  - recognize time trials runs to be able to skip them so vids dont have to be trimmed?
  - Record the number of console resets?
  - Record the number of speedrun resets?
@@ -71,6 +73,9 @@ class Gamestate:
     foundGivenItem = False  #when we determine the item given
     foundNoBoo = False  #When we are trying to find no boo after getting one
 
+    searchingForLuigiRestart = False  #skipping ahead to see if we are back on luigi raceway
+    checkStillInCourse = after skipping frames at race start, check we didnt exit out of race for some reason
+
     blankItemIndex = i   #index of the blankitem in the items list, get it dynamically
     '''
 
@@ -91,6 +96,9 @@ class Gamestate:
         self.foundNoItem = False  #only used after we get an item, so default is False
         self.foundGivenItem = False
         self.foundNoBoo = False  #this is true after we get a boo and then find a frame without it
+
+        self.searchingForLuigiRestart = False
+        self.checkStillInCourse = False
         
         for i, item in enumerate(items):
             if item[0] == "BlankItem":
@@ -125,7 +133,7 @@ def main():
 
         print("Analyzing video " + videoFileName)
         gamestate = Gamestate()
-        frameNum = 0  #debug 5915 #12749 #32350 #5400 #10141 #5000  #13000
+        frameNum = 100000  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
 
         gamestate.count = frameNum
 
@@ -138,17 +146,34 @@ def main():
 
             #if current course is empty, loop until we find one
             if gamestate.currentCourse == "":
-                findCourse(image, gamestate)
+                skipFrames = findCourse(image, gamestate)
                 if gamestate.currentCourse == "":  #didnt find one, skip 110 frames, below lap time is still for 110
+                    if gamestate.searchingForLuigiRestart == True:
+                        #we had skipped 400 frames so if this is false go back 400
+                        frameNum -= 400
+                        gamestate.count -= 400
+                        gamestate.searchingForLuigiRestart = False
                     frameNum += 110
                     gamestate.count += 110
                 else:
+                    if gamestate.searchingForLuigiRestart == True:
+                        #print(gamestate.count, "We did restart Luigi Raceway!")
+                        gamestate.searchingForLuigiRestart = False
+                    if skipFrames != 0:  #if we want to skip frames to first item box
+                        print(gamestate.count, "Skipping to right before first item set in course")
+                        frameNum += skipFrames
+                        gamestate.count += skipFrames
+                        gamestate.checkStillInCourse = True
                     continue
             elif gamestate.currentCourse == "FrappeSnowland" or  gamestate.currentCourse == "WarioStadium":
                 #Skip to just look for black screen, since there will never be items
                 print(gamestate.count, "No items course, searching for black screen...")
                 frameNum += 40  #based on lowest black screen framecount (resets - 40 frames)
                 gamestate.count += 40
+            elif gamestate.checkStillInCourse == True:
+                print(gamestate.count, "Will now check that we're still in this race")
+                #this function will do any variable resetting if we are not in the course anymore
+                checkStillInCourse(image, gamestate)
             #if we're in a course and we have not found an item - try to find an item or a black screen
             elif gamestate.foundAnItem == False and gamestate.foundGivenItem == False:
                 findAnItem(image, gamestate)
@@ -256,6 +281,14 @@ def main():
                     if gamestate.currentCourse == "":
                         frameNum += 300
                         gamestate.count += 300
+                else:  #we did find a black screen
+                    #check if we are restarting on luigi raceway
+                    if gamestate.currentCourseIndex == 0:
+                        #about 400 frames between black screen on restarting luigi raceway and last frame of race start
+                        print(gamestate.count, "Checking if we are restarting on Luigi Raceway...")
+                        frameNum += 400
+                        gamestate.count += 400
+                        gamestate.searchingForLuigiRestart = True
             
         #At the end of the current vid
         print("Done!")
@@ -306,7 +339,7 @@ def getPlace(image, gamestate):
 def findCourse(image, gamestate):
     img_playArea = image[135:, 560:]   #135 is y value that cuts off lap / time
     if gamestate.currentCourseIndex == 0:
-        potentialNextCourses = [0,1,4,5,8,12]
+        potentialNextCourses = [0,1,4,8,12]
     else:
         potentialNextCourses = [0, gamestate.currentCourseIndex + 1]
 
@@ -331,13 +364,13 @@ def findCourse(image, gamestate):
                 gamestate.currentCourse = course[0]
                 gamestate.currentCourseIndex = indexVal
                 print(gamestate.count, gamestate.currentCourse)
-                break
+                return course[4]
         else:
             if max_val >= threshold:
                 gamestate.currentCourse = course[0]
                 gamestate.currentCourseIndex = indexVal
                 print(gamestate.count, gamestate.currentCourse)
-                break
+                return course[4]
 
 
 def findAnItem(image, gamestate):
@@ -606,6 +639,29 @@ def findEndOfRace(image, gamestate):
         gamestate.place = 8
 
 
+#Like finding a black screen, so do similar var resets
+def checkStillInCourse(image, gamestate):
+    img_time = image[70:135, 1385:1520]
+    res = cv2.matchTemplate(img_time, time_pic, cv2.TM_SQDIFF_NORMED)
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+    #print(min_val)
+    #This comparison is the opposite becuase we dont want to find this
+    if min_val > .02:
+        print(gamestate.count, "Between start of race and frame skip to first item box set, we quit out of the race. Resetting gamestate")
+        gamestate.itemRoulette.clear()
+        gamestate.currentCourse = ""
+        gamestate.foundAnItem = False
+        gamestate.foundNoItem = False
+        gamestate.foundBlankItem = False
+        gamestate.foundGivenItem = False
+        gamestate.inNewItemRoulette = False
+        gamestate.place = 8
+    else:
+        print(gamestate.count, "Still in course, continue as normal")
+    #did the checking, reset this
+    gamestate.checkStillInCourse = False
+
+
 
 def localSetup():
     #list of lists of item stats - could be list of tuples, i dont know
@@ -618,5 +674,7 @@ def localSetup():
     blackScreen = cv2.imread("./otherPics/" + 'black.png')
     global total_pic
     total_pic = cv2.imread("./otherPics/" + 'total.png')
+    global time_pic
+    time_pic = cv2.imread("./otherPics/" + 'time.png')
 
 main()

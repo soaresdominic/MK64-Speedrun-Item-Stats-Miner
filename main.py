@@ -38,7 +38,8 @@ Flowchart:
 
 
 TO DO LIST:
- - more efficient looping through list of items and things? most python-algorithmically ineffiencent aspect
+ - if we see 8th place 3 seconds into toads turnpike, that means we're using the new strat with no items,
+    so do similar to frappe and wario stadium with no items
 
  - recognize time trials runs to be able to skip them so vids dont have to be trimmed?
  - Record the number of console resets?
@@ -58,12 +59,9 @@ class Gamestate:
     '''
     place = 8  #current place in the race
     count = 0  #Frame count of current vid
-    itemRoulette = []  #holds list of names of items that we last found in a roulette
-    newItemRoulette = [None, None]  #holds the temporary 2 potential items from adjacent frames to signify in new roulette
     
     inNewItemRoulette = False  #when trying to find no item, if newItemRoulette has two different items
     foundBlankItem = False  #found first blank item in roulette
-    goToSecondFrame = True  #when trying to see if we're in a new roulette, change the list value that is updated
 
     currentCourseIndex = 0  #current / last course index
     currentCourse = ""   #current course string
@@ -72,22 +70,29 @@ class Gamestate:
     foundNoItem = False  #after finding the given item, trying to find no item visible
     foundGivenItem = False  #when we determine the item given
     foundNoBoo = False  #When we are trying to find no boo after getting one
+    lastItemBooItem = False  #When the boo gives us an item this is True
 
     searchingForLuigiRestart = False  #skipping ahead to see if we are back on luigi raceway
-    checkStillInCourse = after skipping frames at race start, check we didnt exit out of race for some reason
+    checkStillInCourse = False  #after skipping frames at race start, check we didnt exit out of race for some reason
+    checkingOnceForRaceStart = False  #after finding race end, we're checking for the race start of the next race
+                                if we just ended on a non resetting course
+
+    goToAdjacentFrame = False  #when trying to see if we're in a new roulette, check frame next to current one
+    goToSecondAdjacentFrame = False  #if foundDoubleAfterTriple or foundSingleAfterTriple, we want to check 2 frames after also
+    foundTripleAfterTriple = False  #last given item was triple mushrooms, see this item again
+    foundDoubleAfterTriple = False  #last given item was triple mushrooms, see double mushrooms
+    foundSingleAfterTriple = False  #last given item was triple mushrooms, see single mushroom
 
     blankItemIndex = i   #index of the blankitem in the items list, get it dynamically
     '''
 
     def __init__(self):
-        self.place = 8
+        self.place = 0
         self.count = 0
-        self.itemRoulette = []
-        self.newItemRoulette = [None,None]
+        self.lastGivenItem = ""
         
         self.inNewItemRoulette = False
         self.foundBlankItem = False
-        self.goToSecondFrame = True
 
         self.currentCourseIndex = 0
         self.currentCourse = ""
@@ -96,15 +101,43 @@ class Gamestate:
         self.foundNoItem = False  #only used after we get an item, so default is False
         self.foundGivenItem = False
         self.foundNoBoo = False  #this is true after we get a boo and then find a frame without it
+        self.lastItemBooItem = False
 
         self.searchingForLuigiRestart = False
         self.checkStillInCourse = False
+        self.checkingOnceForRaceStart = False
+
+        self.goToAdjacentFrame = False
+        self.goToSecondAdjacentFrame = False
+        self.foundTripleAfterTriple = False
+        self.foundDoubleAfterTriple = False
+        self.foundSingleAfterTriple = False
         
         for i, item in enumerate(items):
             if item[0] == "BlankItem":
                 self.blankItemIndex = i
                 break
 
+    #Reset specific vars after race end / blackscreen that are specific to the race only
+    def resetRaceVars(self):
+        self.place = 0
+        self.lastGivenItem = ""
+
+        self.inNewItemRoulette = False
+        self.foundBlankItem = False
+        self.currentCourse = ""
+
+        self.foundAnItem = False
+        self.foundNoItem = False 
+        self.foundGivenItem = False
+        self.foundNoBoo = False 
+        self.lastItemBooItem = False
+
+        self.goToAdjacentFrame = False
+        self.goToSecondAdjacentFrame = False
+        self.foundTripleAfterTriple = False
+        self.foundDoubleAfterTriple = False
+        self.foundSingleAfterTriple = False
 
 
 
@@ -113,7 +146,11 @@ def main():
     if not os.path.isdir("./stats/"):
         os.mkdir("./stats/")
     #will create it if not already present
-    with open('./stats/ItemStats.csv','w') as f:
+    if os.path.isfile('./stats/ItemStats.csv'):
+        rmethod = 'a'
+    else:
+        rmethod = 'w'
+    with open('./stats/ItemStats.csv',rmethod) as f:
         writer = csv.writer(f)
         writer.writerow(['Starting analysis on all videos - ' + str(datetime.datetime.now())])
     #For each video we have in the directory of videosToAnalyze
@@ -133,7 +170,7 @@ def main():
 
         print("Analyzing video " + videoFileName)
         gamestate = Gamestate()
-        frameNum = 100000  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
+        frameNum = 23500  #238000  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
 
         gamestate.count = frameNum
 
@@ -147,6 +184,11 @@ def main():
             #if current course is empty, loop until we find one
             if gamestate.currentCourse == "":
                 skipFrames = findCourse(image, gamestate)
+                if gamestate.checkingOnceForRaceStart == True:
+                    gamestate.checkingOnceForRaceStart = False
+                    if gamestate.currentCourse == "":
+                        frameNum -= 775
+                        gamestate.count -= 775
                 if gamestate.currentCourse == "":  #didnt find one, skip 110 frames, below lap time is still for 110
                     if gamestate.searchingForLuigiRestart == True:
                         #we had skipped 400 frames so if this is false go back 400
@@ -199,7 +241,7 @@ def main():
                 else:  #found the given item
                     continue
             #if we got a boo, find the item it gives us / try to find no boo, then go backwards then forwards
-            elif gamestate.foundGivenItem == True and itemStats[-1][1] == 'Boo' and gamestate.foundNoBoo == False:
+            elif gamestate.foundGivenItem == True and gamestate.lastGivenItem == 'Boo' and gamestate.foundNoBoo == False:
                 findBooItem(image, gamestate)
                 if gamestate.foundNoBoo == False:
                     frameNum += 5*30  #skip ahead five seconds
@@ -211,7 +253,7 @@ def main():
             #If we just got a boo, find the item the boo gives you
             #Once we record this next item, this elif will no longer hit
             #THIS SECOND 1 FOR INDEXING IS IMPORTANT IF THE ITEMSTATS LIST IS CHANGED
-            elif gamestate.foundGivenItem == True and itemStats[-1][1] == 'Boo' and gamestate.foundNoBoo == True:
+            elif gamestate.foundGivenItem == True and gamestate.lastGivenItem == 'Boo' and gamestate.foundNoBoo == True:
                 findBooItem(image, gamestate)
                 #First check if the boo gave us no item - we want to skip 86 frames if it did
                 #91 frames of time from first frame of first blink to last frame of BOO item on screen
@@ -220,7 +262,7 @@ def main():
                 if gamestate.foundAnItem == False and gamestate.foundGivenItem == False:
                     frameNum += 91
                     gamestate.count += 91
-                if itemStats[-1][1] == 'Boo':
+                if gamestate.lastGivenItem == 'Boo':
                     frameNum += 5
                     gamestate.count += 5
                 else:  #found the boo item
@@ -233,39 +275,19 @@ def main():
             elif gamestate.foundGivenItem == True:
                 findNoItem(image, gamestate)
                 if gamestate.foundNoItem == False:  #still have item in inventory
-                    #print(set(gamestate.itemRoulette), gamestate.itemRoulette)
-                    #Every 20 frames do two consequtive frames to see if we're in another roulette
-                    #if items are different and not None
-                    #DO I CARE ABOUT BLANKS AND TWO MUSHROOMS HERE??????????? idk
-                    #print(gamestate.newItemRoulette)
-                    #Double Mushrooms signify using a triple mushroom, so rule that out
-                    if gamestate.newItemRoulette[0] != gamestate.newItemRoulette[1] and \
-                       gamestate.newItemRoulette[0] is not None and \
-                       gamestate.newItemRoulette[1] is not None and \
-                       gamestate.newItemRoulette[0] != "DoubleMushrooms" and \
-                       gamestate.newItemRoulette[1] != "DoubleMushrooms":
-                        gamestate.foundAnItem = True
-                        gamestate.foundGivenItem = False
-                        gamestate.goToSecondFrame = True
-                        gamestate.newItemRoulette = [None, None]
-                        print("Back into item roulette")
+                    #should be able to do 20 frames, gives enough time if we go into new
+                    #roulette for us to realize that between the 20-25th last 5 frames
+                    #of the roulette
+                    if gamestate.goToAdjacentFrame == True or gamestate.goToSecondAdjacentFrame == True:
+                        frameNum += 1
+                        gamestate.count += 1
+                    #we did go to adjacent frame twice, so only skip 18 frames not 19
+                    elif gamestate.foundDoubleAfterTriple or gamestate.foundSingleAfterTriple:
+                        frameNum += 18
+                        gamestate.count += 18
                     else:
-                        #should be able to do 20 frames, gives enough time if we go into new
-                        #roulette for us to realize that between the 20-25th last 5 frames
-                        #of the roulette
-                        if gamestate.goToSecondFrame == True:
-                            frameNum += 1
-                            gamestate.count += 1
-                        else:
-                            frameNum += 19
-                            gamestate.count += 19
-                            gamestate.newItemRoulette = [None, None]
-
-                        #Then change whether to do +1 or +19 next
-                        if gamestate.goToSecondFrame == True:
-                            gamestate.goToSecondFrame = False
-                        else:
-                            gamestate.goToSecondFrame = True
+                        frameNum += 19
+                        gamestate.count += 19
                 else:  #found no item
                     continue
 
@@ -274,13 +296,16 @@ def main():
             if gamestate.currentCourse != "":
                 findBlackScreen(image, gamestate)
                 #if we didnt find a black screen, current course is still != ""
-                #now search for race finish
+                #now search for race finish - non resetting races
                 if gamestate.currentCourse != "":
                     findEndOfRace(image, gamestate)
-                    #If we did find end of race, go forward ten seconds, reset all vars
-                    if gamestate.currentCourse == "":
-                        frameNum += 300
-                        gamestate.count += 300
+                    if gamestate.currentCourse == "":  #Found end of race
+                        if gamestate.checkingOnceForRaceStart == True:
+                            frameNum += 750
+                            gamestate.count += 750
+                        else:
+                            frameNum += 300
+                            gamestate.count += 300
                 else:  #we did find a black screen
                     #check if we are restarting on luigi raceway
                     if gamestate.currentCourseIndex == 0:
@@ -294,7 +319,7 @@ def main():
         print("Done!")
         with open('./stats/ItemStats.csv','a') as f:
             writer = csv.writer(f)
-            writer.writerow(['Done with analysis on video: ' + videoName])
+            writer.writerow(['Done with analysis on video: ' + videoName + str(datetime.datetime.now())])
     with open('./stats/ItemStats.csv','a') as f:
         writer = csv.writer(f)
         writer.writerow(['Done with analysis on all videos - ' + str(datetime.datetime.now())])
@@ -392,14 +417,12 @@ def findAnItem(image, gamestate):
                 if item[0] != "BlankItem":
                     foundItemName = item[0]
                     print(gamestate.count, foundItemName)
-                    gamestate.itemRoulette.append(foundItemName)
                     break  # we should only get one item, stop looking for more items
         else:
             if max_val >= threshold:
                 if item[0] != "BlankItem":
                     foundItemName = item[0]
                     print(gamestate.count, foundItemName)
-                    gamestate.itemRoulette.append(foundItemName)
                     break  # we should only get one item, stop looking for more items
     if foundItemName is not None:
         gamestate.foundAnItem = True
@@ -448,17 +471,14 @@ def findBooItem(image, gamestate):
                 if min_val <= threshold and item[0] != "Boo":
                     foundItemName = item[0]
                     print(gamestate.count, foundItemName)
-                    gamestate.itemRoulette.append(foundItemName)
                     break  # we should only get one item, stop looking for more items
             else:
                 if max_val >= threshold and item[0] != "Boo":
                     foundItemName = item[0]
                     print(gamestate.count, foundItemName)
-                    gamestate.itemRoulette.append(foundItemName)
                     break  # we should only get one item, stop looking for more items
         if foundItemName == "BlankItem":
             print(gamestate.count, "Boo gave no item, reset - Found NO item")
-            gamestate.itemRoulette.clear()
             gamestate.foundAnItem = False
             gamestate.foundNoBoo = False
             gamestate.foundGivenItem = False
@@ -467,6 +487,8 @@ def findBooItem(image, gamestate):
             getPlace(image, gamestate)  #get the current place
             print("Current place is:", gamestate.place)
             tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
+            gamestate.lastGivenItem = foundItemName
+            gamestate.lastItemBooItem = True
             with open('./stats/ItemStats.csv','a') as f:
                 writer = csv.writer(f)
                 writer.writerow(tmp)
@@ -475,7 +497,6 @@ def findBooItem(image, gamestate):
             print(itemStats)
             print(gamestate.count, "Will now try to find NO item")
             #reset vars when we find the given item
-            gamestate.itemRoulette.clear()
             gamestate.foundAnItem = False
             gamestate.foundNoBoo = False
 
@@ -538,6 +559,8 @@ def findGivenItem(image, gamestate):
         getPlace(image, gamestate)  #get the current place
         print("Current place is:", gamestate.place)
         tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
+        gamestate.lastGivenItem = foundItemName
+        gamestate.lastItemBooItem = False
         with open('./stats/ItemStats.csv','a') as f:
             writer = csv.writer(f)
             writer.writerow(tmp)
@@ -545,55 +568,221 @@ def findGivenItem(image, gamestate):
         print("Found given item")
         print(itemStats)
         print(gamestate.count, "Will now try to find NO item")
-        gamestate.newItemRoulette = [None, None]  #make sure this is reset!
         #reset vars when we find the given item
-        gamestate.itemRoulette.clear()
         gamestate.foundAnItem = False
         gamestate.foundBlankItem = False
 
 
-
+#First try to find the same item that was given to us (since that'll be the most common)
+    #if we do check the adjascent frame
+#if we dont find it, check the other items
+    #if we find an item we're in a new roulette
+#if we dont find one, then we reset
+#For after getting triple mushrooms, we check the next 2 adjacent frames
 def findNoItem(image, gamestate):
     img_itemBoxArea = image[72:192, 1167:1323] #image[30:200, 1100:1400]   #image[72:192, 1167:1323]
     foundItemName = None
     thresholdBuffer = .1
     print(gamestate.count, "Trying to find NO item...")
-    #loop all items
+    #First frame - check for same item, then check for mushrooms, then check all other items
+    if gamestate.goToAdjacentFrame == False and gamestate.goToSecondAdjacentFrame == False:
+        #first try to find same item - this is obviously going to be the most common
+        item = items[itemNames.index(gamestate.lastGivenItem)]
+        template = item[1]
+        method = item[2]
+        threshold = item[3]
+        res = cv2.matchTemplate(img_itemBoxArea, template, method)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        if min_val <= threshold + thresholdBuffer:
+            #just in case we just found the same item in a new roulette, check the adjacent frame for a different item
+            #For triple mushrooms we do this normally like every other item, just when we're back in here,
+            #   we check for the item to not be triple or double mushroom
+            gamestate.goToAdjacentFrame = True
+            if item[0] == "TripleMushrooms" and gamestate.lastGivenItem == "TripleMushrooms":
+                gamestate.foundTripleAfterTriple = True
+                #print("Found Triple After Triple")
+            return
+        #If the last item given was triple mushrooms, on first frame check for double or single mushroom
+        elif gamestate.lastGivenItem == "TripleMushrooms":
+            item = items[itemNames.index("DoubleMushrooms")]
+            template = item[1]
+            method = item[2]
+            threshold = item[3]
+            res = cv2.matchTemplate(img_itemBoxArea, template, method)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+            if min_val <= threshold + thresholdBuffer:
+                gamestate.foundDoubleAfterTriple = True
+                #print("Found Double After Triple")
+                gamestate.goToAdjacentFrame = True
+                return
+            else:
+                item = items[itemNames.index("Mushroom")]
+                template = item[1]
+                method = item[2]
+                threshold = item[3]
+                res = cv2.matchTemplate(img_itemBoxArea, template, method)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+                if min_val <= threshold + thresholdBuffer:
+                    gamestate.foundSingleAfterTriple = True
+                    #print("Found Single After Triple")
+                    gamestate.goToAdjacentFrame = True
+                    return
+    #if same item was found or double or single after triple mushrooms was found
+    elif gamestate.goToAdjacentFrame == True:
+        #Odds are we're gonna see the same item, so do similar above and search for given item first
+        item = items[itemNames.index(gamestate.lastGivenItem)]
+        template = item[1]
+        method = item[2]
+        threshold = item[3]
+        res = cv2.matchTemplate(img_itemBoxArea, template, method)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        if min_val <= threshold + thresholdBuffer:
+            gamestate.goToAdjacentFrame = False
+            gamestate.goToSecondAdjacentFrame = False
+            return
+        elif gamestate.foundSingleAfterTriple == True:
+            item = items[itemNames.index("Mushroom")]
+            template = item[1]
+            method = item[2]
+            threshold = item[3]
+            res = cv2.matchTemplate(img_itemBoxArea, template, method)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+            if min_val <= threshold + thresholdBuffer:
+                gamestate.goToAdjacentFrame = False
+                gamestate.goToSecondAdjacentFrame = False
+                return
+            else:
+                #check for double then triple
+                item = items[itemNames.index("DoubleMushrooms")]
+                template = item[1]
+                method = item[2]
+                threshold = item[3]
+                res = cv2.matchTemplate(img_itemBoxArea, template, method)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+                if min_val <= threshold + thresholdBuffer:
+                    gamestate.goToAdjacentFrame = False
+                    gamestate.goToSecondAdjacentFrame = True
+                    return
+        elif gamestate.foundDoubleAfterTriple == True:
+            #first check for double again, if it is double, we're not in new roulette, continue as normal
+            item = items[itemNames.index("DoubleMushrooms")]
+            template = item[1]
+            method = item[2]
+            threshold = item[3]
+            res = cv2.matchTemplate(img_itemBoxArea, template, method)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+            if min_val <= threshold + thresholdBuffer:
+                gamestate.goToAdjacentFrame = False
+                gamestate.goToSecondAdjacentFrame = False
+                return
+            else:
+                #If we see triple mushrooms we're not sure if we're in a new roulette yet, go to second adjacent
+                item = items[itemNames.index("TripleMushrooms")]
+                template = item[1]
+                method = item[2]
+                threshold = item[3]
+                res = cv2.matchTemplate(img_itemBoxArea, template, method)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+                if min_val <= threshold + thresholdBuffer:
+                    gamestate.goToAdjacentFrame = False
+                    gamestate.goToSecondAdjacentFrame = True
+                    return
+        elif gamestate.foundTripleAfterTriple == True:
+            #check for not double or triple mushroom in second frame
+            for i, item in enumerate(items):
+                template = item[1]
+                method = item[2]
+                threshold = item[3]
+                res = cv2.matchTemplate(img_itemBoxArea, template, method)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+                #look for min
+                if min_val <= threshold + thresholdBuffer:
+                    foundItemName = item[0]
+                    if foundItemName != "BlankItem" and foundItemName != "TripleMushrooms" and foundItemName != "DoubleMushrooms":
+                        #found different item, we must be in a new roulette!
+                        gamestate.foundAnItem = True
+                        gamestate.foundGivenItem = False
+                        print(gamestate.count, "Found a different item! Back into item roulette")
+                    #if we found one of those three above, thats normal, just go to next set of frames
+                    gamestate.goToAdjacentFrame = False
+                    return
+    elif gamestate.goToSecondAdjacentFrame == True:
+        #We're only in here if last given item was triple mushrooms and we found single or double in adjacent frame
+        if gamestate.foundSingleAfterTriple == True:
+            item = items[itemNames.index("TripleMushrooms")]
+            template = item[1]
+            method = item[2]
+            threshold = item[3]
+            res = cv2.matchTemplate(img_itemBoxArea, template, method)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+            if min_val <= threshold + thresholdBuffer:
+                #found double then triple after single mushroom, must be in new roulette
+                gamestate.foundAnItem = True
+                gamestate.foundGivenItem = False
+                print(gamestate.count, "Found a different item! Back into item roulette")
+                gamestate.goToAdjacentFrame = False
+                gamestate.goToSecondAdjacentFrame = False
+                return
+        elif gamestate.foundDoubleAfterTriple == True:
+            item = items[itemNames.index("DoubleMushrooms")]
+            template = item[1]
+            method = item[2]
+            threshold = item[3]
+            res = cv2.matchTemplate(img_itemBoxArea, template, method)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+            if min_val <= threshold + thresholdBuffer:
+                gamestate.goToAdjacentFrame = False
+                gamestate.goToSecondAdjacentFrame = False
+                return
+            else:
+                #If we see triple mushrooms we're not sure if we're in a new roulette yet, go to second adjacent
+                item = items[itemNames.index("TripleMushrooms")]
+                template = item[1]
+                method = item[2]
+                threshold = item[3]
+                res = cv2.matchTemplate(img_itemBoxArea, template, method)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+                if min_val <= threshold + thresholdBuffer:
+                    gamestate.goToAdjacentFrame = False
+                    gamestate.goToSecondAdjacentFrame = False
+                    return
+    #Now that we are down there, we already checked for the certain items for mushrooms that are the special cases
+    #   if we didnt already exit out on a return statement above, now just check for every item
+    #   if we find an item that is different than a blank or the last item given that means we must be in
+    #   a new roulette
     for i, item in enumerate(items):
         template = item[1]
         method = item[2]
         threshold = item[3]
-
         res = cv2.matchTemplate(img_itemBoxArea, template, method)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-
-        if method == cv2.TM_SQDIFF_NORMED:
-            #look for min
-            if min_val <= threshold + thresholdBuffer:
-                foundItemName = item[0]
-                if foundItemName != "BlankItem":
-                    if gamestate.goToSecondFrame == True:
-                        gamestate.newItemRoulette[0] = foundItemName
-                    else:
-                        gamestate.newItemRoulette[1] = foundItemName
-                #gamestate.itemRoulette.append(foundItemName)
-                break  # we should only get one item, stop looking for more items
-        else:
-            if max_val >= threshold - thresholdBuffer:
-                foundItemName = item[0]
-                if foundItemName != "BlankItem":
-                    if gamestate.goToSecondFrame == True:
-                        gamestate.newItemRoulette[0] = foundItemName
-                    else:
-                        gamestate.newItemRoulette[1] = foundItemName
-                #gamestate.itemRoulette.append(foundItemName)
-                break  # we should only get one item, stop looking for more items
+        #look for min
+        if min_val <= threshold + thresholdBuffer:
+            foundItemName = item[0]
+            if foundItemName != "BlankItem" and gamestate.lastGivenItem != foundItemName:
+                #There's a couple case where we're not actually in a new roulette
+                if gamestate.foundSingleAfterTriple == True and gamestate.goToSecondAdjacentFrame == True and \
+                    (foundItemName == "DoubleMushrooms" or foundItemName == "Mushroom"):
+                    pass
+                elif itemStats[-2][1] == "Boo" and gamestate.lastItemBooItem == True:
+                    #boo items dont mean we're in a new roulette, it is a given item
+                    pass
+                else:
+                    #found different item, we must be in a new roulette!
+                    gamestate.foundAnItem = True
+                    gamestate.foundGivenItem = False
+                    print(gamestate.count, "Found", foundItemName)
+                    print(gamestate.count, "Found a different item! Back into item roulette")
+            gamestate.goToAdjacentFrame = False
+            gamestate.goToSecondAdjacentFrame = False
+            return
+    
+    #If we got through all that without finding anything, we truly have found no item, reset gamestate
     if foundItemName is None:
         gamestate.foundAnItem = False
         gamestate.foundGivenItem = False
-        gamestate.itemRoulette.clear()
-        gamestate.newItemRoulette = [None, None]
-        gamestate.goToSecondFrame = True
+        gamestate.goToAdjacentFrame = False
+        gamestate.goToSecondAdjacentFrame = False
         print(gamestate.count, "Found NO item")
 
 
@@ -610,15 +799,17 @@ def findBlackScreen(image, gamestate):
     #print(min_val)
     if min_val <= .001:
         print(gamestate.count, "Found Black Screen! Resetting gamestate")
-
-        gamestate.itemRoulette.clear()
+        gamestate.resetRaceVars()
+        '''
         gamestate.currentCourse = ""
         gamestate.foundAnItem = False
         gamestate.foundNoItem = False
         gamestate.foundBlankItem = False
         gamestate.foundGivenItem = False
         gamestate.inNewItemRoulette = False
+        gamestate.lastItemBooItem = False
         gamestate.place = 8
+        '''
 
 
 #Like finding a black screen, so do similar var resets
@@ -628,15 +819,23 @@ def findEndOfRace(image, gamestate):
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
     #print(min_val)
     if min_val <= .01:   #average is .005
-        print(gamestate.count, "Found end of race! Skipping 10 seconds")
-        gamestate.itemRoulette.clear()
+        if gamestate.currentCourseIndex in [3,7,11]:  #If we're on a resetting course
+            #This should never happen though, since its always blackscreen on resetting courses
+            print(gamestate.count, "Found end of race! We're on a resetting race, continue as normal")
+        else:
+            print(gamestate.count, "Found end of race! We're on a non-resetting race, check for next course race start")
+            gamestate.checkingOnceForRaceStart = True
+        gamestate.resetRaceVars()
+        '''
         gamestate.currentCourse = ""
         gamestate.foundAnItem = False
         gamestate.foundNoItem = False
         gamestate.foundBlankItem = False
         gamestate.foundGivenItem = False
         gamestate.inNewItemRoulette = False
+        gamestate.lastItemBooItem = False
         gamestate.place = 8
+        '''
 
 
 #Like finding a black screen, so do similar var resets
@@ -648,7 +847,8 @@ def checkStillInCourse(image, gamestate):
     #This comparison is the opposite becuase we dont want to find this
     if min_val > .02:
         print(gamestate.count, "Between start of race and frame skip to first item box set, we quit out of the race. Resetting gamestate")
-        gamestate.itemRoulette.clear()
+        gamestate.resetRaceVars()
+        '''
         gamestate.currentCourse = ""
         gamestate.foundAnItem = False
         gamestate.foundNoItem = False
@@ -656,6 +856,7 @@ def checkStillInCourse(image, gamestate):
         gamestate.foundGivenItem = False
         gamestate.inNewItemRoulette = False
         gamestate.place = 8
+        '''
     else:
         print(gamestate.count, "Still in course, continue as normal")
     #did the checking, reset this
@@ -667,9 +868,9 @@ def localSetup():
     #list of lists of item stats - could be list of tuples, i dont know
     global itemStats 
     itemStats = []  #[['ItemName', course (string), place (int), count (int) - current frame count],...]
-    global items, itemsBooFirst, places, courses, masks
-    items, places, courses, masks = setup.setup()
-    itemsBooFirst = [items[3]] + items[:3] + items[4:]
+    global items, itemsBooFirst, places, courses, masks, itemNames
+    items, places, courses, masks, itemNames = setup.setup()
+    itemsBooFirst = [items[12]] + items[:12] + items[13:]
     global blackScreen 
     blackScreen = cv2.imread("./otherPics/" + 'black.png')
     global total_pic

@@ -37,24 +37,28 @@ def setup():
     #structure: list of tuples [(itemname, item, method, threshold value), ...]
     global items
     items = []
-    #Order of most polarizing items - easiest to discern to least
+    #Order of most likely to be given (usually in 1st or 8th)
     #thresholds based on highest for any item - .011
-    items.append(("Lightning", Lightning, cv2.TM_SQDIFF_NORMED, .02)) 
-    items.append(("Banana", Banana, cv2.TM_SQDIFF_NORMED, .02))
-    items.append(("QuadBananas", QuadBananas, cv2.TM_SQDIFF_NORMED, .02))
-    items.append(("Boo", Boo, cv2.TM_SQDIFF_NORMED, .02)) 
-    items.append(("Star", Star, cv2.TM_SQDIFF_NORMED, .02))  
-    items.append(("BlueShell", BlueShell, cv2.TM_SQDIFF_NORMED, .02)) 
+    #probabilities in comments in order of 1st to 8th
+    items.append(("Banana", Banana, cv2.TM_SQDIFF_NORMED, .02))   #30%
+    items.append(("GreenShell", GreenShell, cv2.TM_SQDIFF_NORMED, .02))  #30%	5%
+    items.append(("Star", Star, cv2.TM_SQDIFF_NORMED, .02))  #  5%	10%	15%	15%	20%	30%	30%
+    items.append(("Lightning", Lightning, cv2.TM_SQDIFF_NORMED, .02))   #	5%	5%	10%	10%	15%	20%	20%
+    items.append(("TripleRedShells", TripleRedShells, cv2.TM_SQDIFF_NORMED, .02))  #	20%	20%	20%	20%	20%	20%	20%
+    items.append(("BlueShell", BlueShell, cv2.TM_SQDIFF_NORMED, .02))  #                		5%	5%	10%	10%	15%
+    items.append(("TripleMushrooms", TripleMushrooms, cv2.TM_SQDIFF_NORMED, .02))  #    15%	20%	20%	25%	25%	10%	5%
+    items.append(("GoldenMushroom", GoldenMushroom, cv2.TM_SQDIFF_NORMED, .02))  #  5%	10%	10%	10%	10%	10%	10%
+    items.append(("RedShell", RedShell, cv2.TM_SQDIFF_NORMED, .02))    #5%	15%	20%	15%	10%	
+    items.append(("FakeItemBox", FakeItemBox, cv2.TM_SQDIFF_NORMED, .02))  #10%	5%
+    items.append(("Mushroom", Mushroom, cv2.TM_SQDIFF_NORMED, .02))  #10%	5%	5%	5%	5%	
+    items.append(("TripleGreenShells", TripleGreenShells, cv2.TM_SQDIFF_NORMED, .02))  #5%	10%	10%	
+    items.append(("Boo", Boo, cv2.TM_SQDIFF_NORMED, .02))   #5%  5%
+    items.append(("QuadBananas", QuadBananas, cv2.TM_SQDIFF_NORMED, .02))  #5%  5%
     items.append(("BlankItem", BlankItem, cv2.TM_SQDIFF_NORMED, .02)) 
-    items.append(("RedShell", RedShell, cv2.TM_SQDIFF_NORMED, .02))  
-    items.append(("GreenShell", GreenShell, cv2.TM_SQDIFF_NORMED, .02)) 
-    items.append(("TripleRedShells", TripleRedShells, cv2.TM_SQDIFF_NORMED, .02))  
-    items.append(("TripleGreenShells", TripleGreenShells, cv2.TM_SQDIFF_NORMED, .02)) 
-    items.append(("FakeItemBox", FakeItemBox, cv2.TM_SQDIFF_NORMED, .02)) 
-    items.append(("TripleMushrooms", TripleMushrooms, cv2.TM_SQDIFF_NORMED, .02))
-    items.append(("GoldenMushroom", GoldenMushroom, cv2.TM_SQDIFF_NORMED, .02)) 
-    items.append(("Mushroom", Mushroom, cv2.TM_SQDIFF_NORMED, .02))  #if not triple probably just one - high threshold
-    items.append(("DoubleMushrooms", DoubleMushrooms, cv2.TM_SQDIFF_NORMED, .02))  #last case - high threshold
+    items.append(("DoubleMushrooms", DoubleMushrooms, cv2.TM_SQDIFF_NORMED, .02)) 
+
+    global itemNames
+    itemNames = [x for y in items for x in y if type(x) == str]
 
     '''
     #order they appear in clip in game
@@ -191,5 +195,5 @@ def setup():
      - royal raceway based on old shortcut which gets to items faster
     '''
 
-    return items, places, courses, masks
+    return items, places, courses, masks, itemNames
 

@@ -36,6 +36,9 @@ Flowchart:
 > > Found we're in new roulette
 > > Go to 3.
 
+Multi-Threading:
+one thread creates a queue of 1000 frames
+
 
 TO DO LIST:
  - more efficient looping through list of items and things? most python-algorithmically ineffiencent aspect
@@ -52,6 +55,10 @@ import csv
 import setup
 import os
 import datetime
+from threading import Thread
+from queue import Queue
+import time
+import sys
 
 
 class Gamestate:
@@ -106,6 +113,67 @@ class Gamestate:
                 break
 
 
+class FileVideoStream:
+    #1000 frames should be 6GB ish
+    def __init__(self, path):
+        # initialize the file video stream along with the boolean
+        # used to indicate if the thread should be stopped or not
+        self.stream = cv2.VideoCapture(path)
+        self.Frames = []
+        self.maxNumFrames = 1500
+        self.stopped = False
+        self.removedFrames = 0
+
+    def start(self):
+        # start a thread to read frames from the file video stream
+        t = Thread(target=self.update, args=())
+        t.daemon = True
+        t.start()
+        return self
+
+    def update(self):
+        # keep looping infinitely
+        while True:
+            # if the thread indicator variable is set, stop the
+            # thread
+            if self.stopped:
+                return
+            # otherwise, ensure the queue has room in it
+            if self.notFull():
+                # read the next frame from the file
+                grabbed, frame = self.stream.read()
+                # if the `grabbed` boolean is `False`, then we have
+                # reached the end of the video file
+                if not grabbed:
+                    self.stop()
+                    return
+                # add the frame to the queue
+                self.Frames.append(frame)
+                #print(len(self.Frames))
+
+    def removeFrames(self, numFrames):
+        self.Frames = self.Frames[numFrames:]
+        self.removedFrames += numFrames
+
+    def read(self, i):
+        # return frame from index i
+        while True:
+            try:
+                #print("Reading Frame", i)
+                return True, self.Frames[i]
+            except:
+                print("HAVENT READ THE FRAME YET FROM THE VIDEO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print("wait 5 seconds for the thread to read more")
+                time.sleep(5.0)
+
+    def notFull(self):
+        # return True if there are still frames in the queue
+        return len(self.Frames) < self.maxNumFrames
+
+    def stop(self):
+        # indicate that the thread should be stopped
+        self.stopped = True
+
 
 
 def main():
@@ -121,11 +189,10 @@ def main():
     for videoFileName in os.listdir(videosDirectory):
         global videoName
         videoName = videoFileName
-        try:
-            vidcap = cv2.VideoCapture(videosDirectory + videoFileName)
-        except:
-            print("Video " + videoFileName + " could not be read")
-            continue
+
+        fvs = FileVideoStream(videosDirectory + videoFileName).start()
+        time.sleep(8.0)  #allow buffer time
+        print(len(fvs.Frames), "Frames all buffered")
 
         with open('./stats/ItemStats.csv','a') as f:
             writer = csv.writer(f)
@@ -133,17 +200,20 @@ def main():
 
         print("Analyzing video " + videoFileName)
         gamestate = Gamestate()
-        frameNum = 100000  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
-
+        frameNum = 0  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
+        fvs.removedFrames = frameNum
         gamestate.count = frameNum
 
         #Loop to read images from video
         while True:
-            vidcap.set(cv2.CAP_PROP_POS_FRAMES, frameNum)   #sets the frame to read
-            success,image = vidcap.read()
+            fvsIndex = frameNum - fvs.removedFrames
+            success, image = fvs.read(fvsIndex)
+            #vidcap.set(cv2.CAP_PROP_POS_FRAMES, frameNum)   #sets the frame to read
+            #success,image = vidcap.read()
             if not success: 
                 break
 
+            frameNumBeforeChange = frameNum
             #if current course is empty, loop until we find one
             if gamestate.currentCourse == "":
                 skipFrames = findCourse(image, gamestate)
@@ -290,6 +360,16 @@ def main():
                         gamestate.count += 400
                         gamestate.searchingForLuigiRestart = True
             
+
+            #At the very end of each frame analysis, check if we need to remove frames from list
+            #if the next index will be >500, remove the number of frames above 500 we are from the beginning
+            #At this point frameNum is pointing to the next frame we want to look at
+            if frameNum - fvs.removedFrames > 500:
+                framesToRemove = (frameNum - fvs.removedFrames) - 500
+                fvs.removeFrames(framesToRemove)
+                #print("Removed ", framesToRemove, "Frames")
+                #other thread should fill up the array to 1000 frames again
+
         #At the end of the current vid
         print("Done!")
         with open('./stats/ItemStats.csv','a') as f:

@@ -9,9 +9,15 @@ Assumptions:
  - input videos are 1080p, same format as current vids as of 8/12/21
  - videos don't start during a run
 
+Requirements:
+-python3 64 bit
+- ~9 GB RAM Free - close google chrome ;)
+-opencv-python (cv2)
+-psutil
+
 Usage (preferred):
 -Navigate to root folder in powershell
--python main.py
+-py main.py
 
 Flowchart:
 1. Search for a course start screen - every 80 frames check if it relates to a start screen
@@ -37,8 +43,17 @@ Flowchart:
 > > Go to 3.
 
 Multi-Threading:
-one thread creates a queue of 1000 frames
-
+-One thread continually populates a list of the next 1500 frames
+-As we advance the framenum / count, we remove any frames from the start of the list
+    where number removed is the difference between the next frame and frame 800
+    e.g. next frame is 920, remove 120 frames from start of list
+    list will then keep populating the next 120 free spots at end of the list
+-worst case
+on frame 800
++775
+remove first 775, frame 800 is now 25
+incase we need to -775 back to frame 25
+these minus frames are never done more than once at a time, except for one for finding given item
 
 TO DO LIST:
  - if we see 8th place 3 seconds into toads turnpike, that means we're using the new strat with no items,
@@ -51,7 +66,6 @@ TO DO LIST:
 
 import cv2
 import numpy as np
-from matplotlib import pyplot as plt
 import csv
 import setup
 import os
@@ -60,6 +74,8 @@ from threading import Thread
 from queue import Queue
 import time
 import sys
+import psutil
+import math
 
 
 class Gamestate:
@@ -147,15 +163,20 @@ class Gamestate:
         self.foundSingleAfterTriple = False
 
 class FileVideoStream:
-    #1000 frames should be 6GB ish
+    #1500 frames should be 9GB ish
     def __init__(self, path):
         # initialize the file video stream along with the boolean
         # used to indicate if the thread should be stopped or not
         self.stream = cv2.VideoCapture(path)
         self.Frames = []
-        self.maxNumFrames = 1500
         self.stopped = False
         self.removedFrames = 0
+        #get how many frames we can reasonbly fit with the amount of memory we have
+        #leave 1GB extra
+        stats = psutil.virtual_memory()  # returns a named tuple
+        available = getattr(stats, 'available')
+        self.maxNumFrames = math.floor( (available - 1073741824) / 6220868 )
+        print("Using", self.maxNumFrames, "Max Frames")
 
     def start(self):
         # start a thread to read frames from the file video stream
@@ -195,9 +216,11 @@ class FileVideoStream:
                 #print("Reading Frame", i)
                 return True, self.Frames[i]
             except:
-                print("HAVENT READ THE FRAME YET FROM THE VIDEO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("wait 5 seconds for the thread to read more")
-                time.sleep(5.0)
+                print("HAVENT READ THE REQUESTED FRAME YET FROM THE VIDEO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print("waiting until we're back up to 1500 read frames")
+                while self.notFull():
+                    time.sleep(0.25)
+
 
     def notFull(self):
         # return True if there are still frames in the queue
@@ -228,7 +251,11 @@ def main():
         videoName = videoFileName
 
         fvs = FileVideoStream(videosDirectory + videoFileName).start()
-        time.sleep(8.0)  #allow buffer time
+        print("Waiting to buffer all", fvs.maxNumFrames, "frames")
+        while fvs.notFull():
+            time.sleep(.25)
+
+        time.sleep(10.0)  #allow buffer time
         print(len(fvs.Frames), "Frames all buffered")
 
         with open('./stats/ItemStats.csv','a') as f:
@@ -387,10 +414,10 @@ def main():
             
 
             #At the very end of each frame analysis, check if we need to remove frames from list
-            #if the next index will be >500, remove the number of frames above 500 we are from the beginning
+            #if the next index will be >800, remove the number of frames above 800 we are from the beginning
             #At this point frameNum is pointing to the next frame we want to look at
-            if frameNum - fvs.removedFrames > 500:
-                framesToRemove = (frameNum - fvs.removedFrames) - 500
+            if frameNum - fvs.removedFrames > 800:
+                framesToRemove = (frameNum - fvs.removedFrames) - 800
                 fvs.removeFrames(framesToRemove)
                 #print("Removed ", framesToRemove, "Frames")
                 #other thread should fill up the array to 1000 frames again

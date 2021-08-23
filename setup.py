@@ -171,23 +171,24 @@ def setup():
     global courses
     courses = []
     #course order in game / speedruns
-    #Name, Image, Match Method, Threshold, # of frames from start of race before its possible to pickup an item (-1 second)
-    courses.append(("LuigiRaceway", Course_LuigiRaceway, cv2.TM_SQDIFF_NORMED, .03, 150))
-    courses.append(("MooMooFarm", Course_MooMooFarm, cv2.TM_SQDIFF_NORMED, .03, 80))
-    courses.append(("KoopaTroopaBeach", Course_KoopaTroopaBeach, cv2.TM_SQDIFF_NORMED, .03, 330))
-    courses.append(("KalimariDesert", Course_KalimariDesert, cv2.TM_SQDIFF_NORMED, .03, 155))
-    courses.append(("ToadsTurnpike", Course_ToadsTurnpike, cv2.TM_SQDIFF_NORMED, .03, 330))
-    courses.append(("FrappeSnowland", Course_FrappeSnowland, cv2.TM_SQDIFF_NORMED, .03, 0))
-    courses.append(("ChocoMountain", Course_ChocoMountain, cv2.TM_SQDIFF_NORMED, .03, 90))
-    courses.append(("MarioRaceway", Course_MarioRaceway, cv2.TM_SQDIFF_NORMED, .03, 30))
-    courses.append(("WarioStadium", Course_WarioStadium, cv2.TM_SQDIFF_NORMED, .03, 0))
-    courses.append(("SherbetLand", Course_SherbetLand, cv2.TM_SQDIFF_NORMED, .03, 90))
-    courses.append(("RoyalRaceway", Course_RoyalRaceway, cv2.TM_SQDIFF_NORMED, .03, 120))
-    courses.append(("BowsersCastle", Course_BowsersCastle, cv2.TM_SQDIFF_NORMED, .03, 90))
-    courses.append(("DKJungleParkway", Course_DKJungleParkway, cv2.TM_SQDIFF_NORMED, .03, 240))
-    courses.append(("YoshiValley", Course_YoshiValley, cv2.TM_SQDIFF_NORMED, .03, 90))
-    courses.append(("BansheeBoardwalk", Course_BansheeBoardwalk, cv2.TM_SQDIFF_NORMED, .03, 150))
-    courses.append(("RainbowRoad", Course_RainbowRoad, cv2.TM_SQDIFF_NORMED, .03, 180))
+    #Name, Image, Match Method, Threshold, # of frames from start of race before its possible to pickup an item (-1 second),
+        # of frames between finish (total on screen) and start of next race
+    courses.append(("LuigiRaceway", Course_LuigiRaceway, cv2.TM_SQDIFF_NORMED, .03, 150, 750))
+    courses.append(("MooMooFarm", Course_MooMooFarm, cv2.TM_SQDIFF_NORMED, .03, 80, 750))
+    courses.append(("KoopaTroopaBeach", Course_KoopaTroopaBeach, cv2.TM_SQDIFF_NORMED, .03, 330, 750))
+    courses.append(("KalimariDesert", Course_KalimariDesert, cv2.TM_SQDIFF_NORMED, .03, 155, 0))
+    courses.append(("ToadsTurnpike", Course_ToadsTurnpike, cv2.TM_SQDIFF_NORMED, .03, 330,710))
+    courses.append(("FrappeSnowland", Course_FrappeSnowland, cv2.TM_SQDIFF_NORMED, .03, 0, 710))
+    courses.append(("ChocoMountain", Course_ChocoMountain, cv2.TM_SQDIFF_NORMED, .03, 90, 710))
+    courses.append(("MarioRaceway", Course_MarioRaceway, cv2.TM_SQDIFF_NORMED, .03, 30, 0))
+    courses.append(("WarioStadium", Course_WarioStadium, cv2.TM_SQDIFF_NORMED, .03, 0, 690))
+    courses.append(("SherbetLand", Course_SherbetLand, cv2.TM_SQDIFF_NORMED, .03, 90, 740))
+    courses.append(("RoyalRaceway", Course_RoyalRaceway, cv2.TM_SQDIFF_NORMED, .03, 120, 750))
+    courses.append(("BowsersCastle", Course_BowsersCastle, cv2.TM_SQDIFF_NORMED, .03, 90, 0))
+    courses.append(("DKJungleParkway", Course_DKJungleParkway, cv2.TM_SQDIFF_NORMED, .03, 240, 800))
+    courses.append(("YoshiValley", Course_YoshiValley, cv2.TM_SQDIFF_NORMED, .03, 90, 700))
+    courses.append(("BansheeBoardwalk", Course_BansheeBoardwalk, cv2.TM_SQDIFF_NORMED, .03, 150, 730))
+    courses.append(("RainbowRoad", Course_RainbowRoad, cv2.TM_SQDIFF_NORMED, .03, 180, 0))
     '''
     assumptions:
      - dont take the first item set in Koopa Troopa Beach

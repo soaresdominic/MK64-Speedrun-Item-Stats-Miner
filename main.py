@@ -45,24 +45,14 @@ Flowchart:
 Multi-Threading:
 -One thread continually populates a list of the next x frames
 -As we advance the framenum / count, we remove any frames from the start of the list
-    where number removed is the difference between the next frame and frame 800
-    e.g. next frame is 920, remove 120 frames from start of list
+    where number removed is the difference between the next frame and frame cutoff value
+    e.g. frame cutoff 800 next frame is 920, remove 120 frames from start of list
     list will then keep populating the next 120 free spots at end of the list
--worst case
-on frame 800
-+775
-remove first 775, frame 800 is now 25
-incase we need to -775 back to frame 25
-these minus frames are never done more than once at a time, except for one for finding given item
+-allow skipping this for major skips forward, so we dont remove a frame we need if we need to go backwards
+these minus frames are never done more than once at a time, except for one for finding given item (-1 for max 5 frames)
 
 TO DO LIST:
- - different frame numbers to skip between finished races and start of next races
- - if we see 8th place 3 seconds into toads turnpike, that means we're using the new strat with no items,
-    so do similar to frappe and wario stadium with no items
-
  - recognize time trials runs to be able to skip them so vids dont have to be trimmed?
- - Record the number of console resets?
- - Record the number of speedrun resets?
 '''
 
 import cv2
@@ -120,6 +110,7 @@ class Gamestate:
 
         self.currentCourseIndex = 0
         self.currentCourse = ""
+        self.noItemsToadsTurnpike = False
 
         self.foundAnItem = False
         self.foundNoItem = False  #only used after we get an item, so default is False
@@ -150,6 +141,7 @@ class Gamestate:
         self.inNewItemRoulette = False
         self.foundBlankItem = False
         self.currentCourse = ""
+        self.noItemsToadsTurnpike = False
 
         self.foundAnItem = False
         self.foundNoItem = False 
@@ -175,6 +167,9 @@ class FileVideoStream:
         self.removedFrames = 0
         self.xOffset = 560
         self.yOffset = 1020
+        self.timeToFull = 0   #seconds requred to buffer all x frames from an empty list
+        self.FrameCutoff = 200  #highest is -150 possible for finding boo 
+        self.skipRemovingFrames = False  #this is so for skipping ahead a lot (700 frames, i dont need the framecutoff to be huge
         #get how many frames we can reasonbly fit with the amount of memory we have
         #leave 1GB extra
         stats = psutil.virtual_memory()  # returns a named tuple
@@ -182,8 +177,9 @@ class FileVideoStream:
         self.maxNumFrames = math.floor( (available - 1073741824) / 4406536 )
         print("Using", self.maxNumFrames, "Max Frames")
 
-    def start(self):
+    def start(self, frameNum):
         # start a thread to read frames from the file video stream
+        self.stream.set(cv2.CAP_PROP_POS_FRAMES, frameNum)   #sets the frame to read
         t = Thread(target=self.update, args=())
         t.daemon = True
         t.start()
@@ -210,6 +206,12 @@ class FileVideoStream:
                 self.Frames.append(frame[:self.yOffset , self.xOffset:].copy())
                 #print(len(self.Frames))
 
+    def ResetForNewVideo(self):
+        del self.Frames
+        self.stopped = False
+        self.removedFrames = 0
+        print("Deleting frames and recalculating how much space we have for new video")
+
     def removeFrames(self, numFrames):
         self.Frames = self.Frames[numFrames:]
         self.removedFrames += numFrames
@@ -225,8 +227,10 @@ class FileVideoStream:
                 print("waiting until we're back up to", int((self.maxNumFrames * .7 )), "read frames")
                 #print("waiting until we're back up to", self.maxNumFrames, "read frames")
                 #while self.notFull():
+                print("Sleeping", round(self.timeToFull * .7, 2), "seconds")
+                time.sleep(round(self.timeToFull * .7, 2))
                 while len(self.Frames) < int((self.maxNumFrames * .7 )):   #less than 70% full
-                    time.sleep(0.25)
+                    time.sleep(0.1)
                 #print("Done. We can now continue")
 
     def notFull(self):
@@ -248,31 +252,34 @@ def main():
         rmethod = 'a'
     else:
         rmethod = 'w'
-    with open('./stats/ItemStats.csv',rmethod) as f:
+    with open('./stats/ItemStats.csv',rmethod, newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['Starting analysis on all videos - ' + str(datetime.datetime.now())])
     #For each video we have in the directory of videosToAnalyze
     videosDirectory = './videosToAnalyze/'
     for videoFileName in os.listdir(videosDirectory):
-        #print(videoFileName[len(videoFileName)-4:].lower())
         if videoFileName[len(videoFileName)-3:].lower() not in ["mkv", "mp4", "flv", "mov"]:
             continue
         global videoName
         videoName = videoFileName
 
-        fvs = FileVideoStream(videosDirectory + videoFileName).start()
+        frameNum = 0  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
+
+        #Creating the video reading thread and filling the list
+        fvs = FileVideoStream(videosDirectory + videoFileName).start(frameNum)
         print("Waiting to buffer all", fvs.maxNumFrames, "frames")
+        startTime = time.time()
         while fvs.notFull():
             time.sleep(.25)
+        fvs.timeToFull = round(time.time() - startTime, 2)
         print(len(fvs.Frames), "Frames all buffered")
 
-        with open('./stats/ItemStats.csv','a') as f:
+        with open('./stats/ItemStats.csv','a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['Starting analysis on video: ' + videoName])
 
         print("Analyzing video " + videoFileName)
         gamestate = Gamestate()
-        frameNum = 0  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
         fvs.removedFrames = frameNum  #incase we started at not 0
         gamestate.count = frameNum
 
@@ -288,7 +295,7 @@ def main():
             frameNumBeforeChange = frameNum
             #if current course is empty, loop until we find one
             if gamestate.currentCourse == "":
-                skipFrames = findCourse(image, gamestate)
+                skipFrames = findCourse(image, gamestate, fvs, fvsIndex)
                 if gamestate.checkingOnceForRaceStart:
                     gamestate.checkingOnceForRaceStart = False
                     if gamestate.currentCourse == "":
@@ -312,7 +319,7 @@ def main():
                         gamestate.count += skipFrames
                         gamestate.checkStillInCourse = True
                     continue
-            elif gamestate.currentCourse == "FrappeSnowland" or  gamestate.currentCourse == "WarioStadium":
+            elif gamestate.currentCourse == "FrappeSnowland" or  gamestate.currentCourse == "WarioStadium" or gamestate.noItemsToadsTurnpike:
                 #Skip to just look for black screen, since there will never be items
                 print(gamestate.count, "No items course, searching for black screen...")
                 frameNum += 40  #based on lowest black screen framecount (resets - 40 frames)
@@ -406,11 +413,15 @@ def main():
                     findEndOfRace(image, gamestate)
                     if gamestate.currentCourse == "":  #Found end of race
                         if gamestate.checkingOnceForRaceStart:
-                            frameNum += 750
-                            gamestate.count += 750
+                            frameAdvance = courses[gamestate.currentCourseIndex][5]
+                            print(gamestate.count, "Checking ahead", frameAdvance, "frames")
+                            frameNum += frameAdvance
+                            gamestate.count += frameAdvance
+                            fvs.skipRemovingFrames = True
                         else:
                             frameNum += 300
                             gamestate.count += 300
+                            #wont ever go back on these 300 so no need to skipremovingframes
                 else:  #we did find a black screen
                     #check if we are restarting on luigi raceway
                     if gamestate.currentCourseIndex == 0:
@@ -419,23 +430,28 @@ def main():
                         frameNum += 400
                         gamestate.count += 400
                         gamestate.searchingForLuigiRestart = True
+                        fvs.skipRemovingFrames = True
             
 
             #At the very end of each frame analysis, check if we need to remove frames from list
             #if the next index will be >800, remove the number of frames above 800 we are from the beginning
             #At this point frameNum is pointing to the next frame we want to look at
-            if frameNum - fvs.removedFrames > 800:
-                framesToRemove = (frameNum - fvs.removedFrames) - 800
+            if ((frameNum - fvs.removedFrames) > fvs.FrameCutoff) and not fvs.skipRemovingFrames:
+                framesToRemove = (frameNum - fvs.removedFrames) - fvs.FrameCutoff
                 fvs.removeFrames(framesToRemove)
                 #print("Removed ", framesToRemove, "Frames")
                 #other thread should fill up the array to 1000 frames again
+            elif fvs.skipRemovingFrames:
+                fvs.skipRemovingFrames = False  #reset this after skipping directly above
 
         #At the end of the current vid
         print("Done!")
-        with open('./stats/ItemStats.csv','a') as f:
+        with open('./stats/ItemStats.csv','a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['Done with analysis on video: ' + videoName + str(datetime.datetime.now())])
-    with open('./stats/ItemStats.csv','a') as f:
+        #important, reset the vars for the frame list and things
+        fvs.ResetForNewVideo()
+    with open('./stats/ItemStats.csv','a', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['Done with analysis on all videos - ' + str(datetime.datetime.now())])
 
@@ -445,7 +461,7 @@ def main():
 #enough to where the darkest 1st has the same color as the brightest 2nd
 def getPlace(image, gamestate):
     #First we can rule out 8th, since it's very common, with basic color detection
-    image_8th = image[865:879, 728-560:739]
+    image_8th = image[865:879, 728-560:739-560]
     image_8th = cv2.cvtColor(image_8th, cv2.COLOR_BGR2GRAY)
     #print(image_8th)
     if min(min(image_8th, key=min)) >= 90 and max(max(image_8th, key=max)) <= 110:
@@ -454,7 +470,7 @@ def getPlace(image, gamestate):
 
     #Now do matching for other places
     #Masking took a while to figure out, it may not be perfect
-    image_place = image[700:980, 600-560:930]  #[650:880, 750:930]
+    image_place = image[700:980, 600-560:930-560]  #[650:880, 750:930]
     #dont know if inversion helps - it seems to for black screens
     image_place = 255-image_place
     maxs = []
@@ -476,7 +492,7 @@ def getPlace(image, gamestate):
 
 
 
-def findCourse(image, gamestate):
+def findCourse(image, gamestate, fvs, fvsIndex):
     img_playArea = image[135:, :]   #135 is y value that cuts off lap / time
     if gamestate.currentCourseIndex == 0:
         potentialNextCourses = [0,1,4,8,12]
@@ -507,6 +523,16 @@ def findCourse(image, gamestate):
                 gamestate.currentCourse = course[0]
                 gamestate.currentCourseIndex = indexVal
                 print(gamestate.count, gamestate.currentCourse)
+                if gamestate.currentCourse == "ToadsTurnpike":
+                    print(gamestate.count, "Check if this is new strat toads turnpike with no items or old strat")
+                    success, imagepl = fvs.read(fvsIndex + 240)  #8 seconds after, check for 8th place
+                    #cv2.imwrite("./test.png", imagepl)
+                    getPlace(imagepl, gamestate)  #get the current place
+                    if gamestate.place == 8:
+                        print(gamestate.count, "NEW strat toads turnpike")
+                        gamestate.noItemsToadsTurnpike = True
+                    else:
+                        print(gamestate.count, "OLD strat toads turnpike")
                 return course[4]
         else:
             if max_val >= threshold:
@@ -607,12 +633,12 @@ def findBooItem(image, gamestate):
             tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
             gamestate.lastGivenItem = foundItemName
             gamestate.lastItemBooItem = True
-            with open('./stats/ItemStats.csv','a') as f:
+            with open('./stats/ItemStats.csv','a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(tmp)
             itemStats.append(tmp)
             print("Found given item")
-            print(itemStats)
+            print(itemStats[-50:]  #only print last 50 incase there's a ton from multiple videos
             print(gamestate.count, "Will now try to find NO item")
             #reset vars when we find the given item
             gamestate.foundAnItem = False
@@ -679,7 +705,7 @@ def findGivenItem(image, gamestate):
         tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
         gamestate.lastGivenItem = foundItemName
         gamestate.lastItemBooItem = False
-        with open('./stats/ItemStats.csv','a') as f:
+        with open('./stats/ItemStats.csv','a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(tmp)
         itemStats.append(tmp)

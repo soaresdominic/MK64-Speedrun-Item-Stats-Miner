@@ -638,7 +638,7 @@ def findBooItem(image, gamestate):
                 writer.writerow(tmp)
             itemStats.append(tmp)
             print("Found given item")
-            print(itemStats[-50:]  #only print last 50 incase there's a ton from multiple videos
+            print(itemStats[-50:])  #only print last 50 incase there's a ton from multiple videos
             print(gamestate.count, "Will now try to find NO item")
             #reset vars when we find the given item
             gamestate.foundAnItem = False

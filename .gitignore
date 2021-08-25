@@ -8,3 +8,9 @@ stats/
 # python stuff
 __pycache__/
 *.py[cod]
+
+#ignore videoranges data file
+videoRanges.csv
+
+#excel stats
+*.xls*

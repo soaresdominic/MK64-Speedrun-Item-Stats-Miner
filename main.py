@@ -6,8 +6,9 @@ Loop over all videos in folder and analyze the frames sequentially to determine 
 by the item roulette. Collect stats on Place, Item, Course, Frame, Video. Append these stats to a file - 
 append these stats so if the program stops working it retains the stats
 Assumptions:
+ - videos are less than 20 hours
  - input videos are 1080p, same format as current vids as of 8/12/21
- - videos don't start during a run
+ - videos don't start during a run (if no frame range entered)
 
 Requirements:
 -python3 64 bit
@@ -51,8 +52,17 @@ Multi-Threading:
 -allow skipping this for major skips forward, so we dont remove a frame we need if we need to go backwards
 these minus frames are never done more than once at a time, except for one for finding given item (-1 for max 5 frames)
 
-TO DO LIST:
- - recognize time trials runs to be able to skip them so vids dont have to be trimmed?
+Video Ranges:
+A text file "videoRanges.csv" created in the root folder. the text file has the following format
+video filename, start minute of video to process, end minute of video to process,  start minute of video to process, end minute of video to process, etc.
+minutes are integers and can be 0 or after video ends. put a 1 minute buffer to each time 5,10 -> 4,11
+
+ToDo:
+error - same video
+starting at 7192
+['LuigiRaceway', 'RedShell', 3, 8140, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Star', 3, 8927, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Star', 4, 9700, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Lightning', 4, 10542, '2021-07-17 17-44-28.mkv']
+starting at 0
+['LuigiRaceway', 'RedShell', 3, 8159, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Star', 3, 8953, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Star', 4, 9727, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Lightning', 4, 10563, '2021-07-17 17-44-28.mkv']
 '''
 
 import cv2
@@ -170,16 +180,18 @@ class FileVideoStream:
         self.timeToFull = 0   #seconds requred to buffer all x frames from an empty list
         self.FrameCutoff = 200  #highest is -150 possible for finding boo 
         self.skipRemovingFrames = False  #this is so for skipping ahead a lot (700 frames, i dont need the framecutoff to be huge
+        self.CurrentlyRemovingFrames = False  #lock process so new thread cannot add frames while we are currently removing them
         #get how many frames we can reasonbly fit with the amount of memory we have
         #leave 1GB extra
         stats = psutil.virtual_memory()  # returns a named tuple
         available = getattr(stats, 'available')
-        self.maxNumFrames = math.floor( (available - 1073741824) / 4406536 )
+        self.maxNumFrames = math.floor( (available - 1073741824) / 4406536 )   #4406536 size of one frame
         print("Using", self.maxNumFrames, "Max Frames")
 
     def start(self, frameNum):
         # start a thread to read frames from the file video stream
-        self.stream.set(cv2.CAP_PROP_POS_FRAMES, frameNum)   #sets the frame to read
+        if frameNum != 0:
+            self.stream.set(cv2.CAP_PROP_POS_FRAMES, frameNum)   #sets the frame to read
         t = Thread(target=self.update, args=())
         t.daemon = True
         t.start()
@@ -193,9 +205,12 @@ class FileVideoStream:
             if self.stopped:
                 return
             # otherwise, ensure the list has room in it
-            if self.notFull():
+            if self.notFull() and not self.CurrentlyRemovingFrames:
                 # read the next frame from the file
-                grabbed, frame = self.stream.read()
+                #if i != self.stream.get(cv2.CAP_PROP_POS_FRAMES) - 1:
+                #    print("ASDADDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
+                #print(self.stream.get(cv2.CAP_PROP_POS_FRAMES), i)
+                grabbed, frame = self.stream.read()  
                 #print(len(self.Frames))
                 # if the `grabbed` boolean is `False`, then we have
                 # reached the end of the video file
@@ -204,16 +219,24 @@ class FileVideoStream:
                     return
                 # add the frame to the list
                 self.Frames.append(frame[:self.yOffset , self.xOffset:].copy())
-                #print(len(self.Frames))
+            #DEBUG
+            #elif self.CurrentlyRemovingFrames:
+            #    print("WARNING WE MAYBE WOULD HAVE SKIPPED THIS FRAME BEFORE!!!!!!!!!!------------------!!!!!!!!!!!!!!!!!")
+
 
     def ResetForNewVideo(self):
-        del self.Frames
+        self.Frames.clear()
+        print("Deallocating the memory for the old frames...")
+        time.sleep(3.0)  #allow some time for the memory to be deallocated
         self.stopped = False
         self.removedFrames = 0
-        print("Deleting frames and recalculating how much space we have for new video")
+        print("Done. recalculating how much space we have for new video")
 
     def removeFrames(self, numFrames):
-        self.Frames = self.Frames[numFrames:]
+        self.CurrentlyRemovingFrames = True
+        #self.Frames = self.Frames[numFrames:]
+        del self.Frames[:numFrames]  #This is important, there seemed to have been a bug with the splicing, must delete instead
+        self.CurrentlyRemovingFrames = False
         self.removedFrames += numFrames
 
     def read(self, i):
@@ -223,7 +246,7 @@ class FileVideoStream:
                 #print("Reading Frame", i)
                 return True, self.Frames[i]
             except:
-                print("HAVENT READ THE REQUESTED FRAME YET FROM THE VIDEO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print("HAVENT READ THE REQUESTED FRAME YET FROM THE VIDEO!-----------------------------------------")
                 print("waiting until we're back up to", int((self.maxNumFrames * .7 )), "read frames")
                 #print("waiting until we're back up to", self.maxNumFrames, "read frames")
                 #while self.notFull():
@@ -245,6 +268,9 @@ class FileVideoStream:
 
 def main():
     localSetup()  #grab all the pics and things for image matching
+    videoRanges = getVideoRanges()  #dictionary of {videofilename: [(range start, range end), (range start, range end), ...], ...}
+    print("Video Ranges loaded")
+    print(videoRanges)
     if not os.path.isdir("./stats/"):
         os.mkdir("./stats/")
     #will create it if not already present
@@ -255,6 +281,7 @@ def main():
     with open('./stats/ItemStats.csv',rmethod, newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['Starting analysis on all videos - ' + str(datetime.datetime.now())])
+        writer.writerow(['Video Ranges loaded:'] + [(k,v) for k,v in videoRanges.items()])
     #For each video we have in the directory of videosToAnalyze
     videosDirectory = './videosToAnalyze/'
     for videoFileName in os.listdir(videosDirectory):
@@ -263,186 +290,205 @@ def main():
         global videoName
         videoName = videoFileName
 
-        frameNum = 0  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
+        if videoFileName not in videoRanges:
+            videoRanges[videoFileName] = [(None, None)]
 
-        #Creating the video reading thread and filling the list
-        fvs = FileVideoStream(videosDirectory + videoFileName).start(frameNum)
-        print("Waiting to buffer all", fvs.maxNumFrames, "frames")
-        startTime = time.time()
-        while fvs.notFull():
-            time.sleep(.25)
-        fvs.timeToFull = round(time.time() - startTime, 2)
-        print(len(fvs.Frames), "Frames all buffered")
+        for startEndTime in videoRanges[videoFileName]:
+            if startEndTime[0] is None and startEndTime[1] is None:
+                startFrame = 0
+                endFrame = 2157840  #<- lazy programming - 20 hours of 29.97 framerate video
+            else:
+                if startEndTime[0] < 0:
+                    startEndTime[0] = 0
+                startFrame = int(startEndTime[0]*29.97*60)
+                endFrame = int(startEndTime[1]*29.97*60)
+            frameNum = startFrame  #debug 7000 5915 #12749 #32350 #5400 #10141 #5000  #13000
 
-        with open('./stats/ItemStats.csv','a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Starting analysis on video: ' + videoName])
+            #Creating the video reading thread and filling the list
+            fvs = FileVideoStream(videosDirectory + videoFileName).start(frameNum)
+            print("Waiting to buffer all", fvs.maxNumFrames, "frames")
+            startTime = time.time()
+            while fvs.notFull():
+                time.sleep(.25)
+            fvs.timeToFull = round(time.time() - startTime, 2)
+            print(len(fvs.Frames), "Frames all buffered")
 
-        print("Analyzing video " + videoFileName)
-        gamestate = Gamestate()
-        fvs.removedFrames = frameNum  #incase we started at not 0
-        gamestate.count = frameNum
+            with open('./stats/ItemStats.csv','a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Starting analysis on video: ' + videoName])
 
-        #Loop to read images from video
-        while True:
-            fvsIndex = frameNum - fvs.removedFrames
-            success, image = fvs.read(fvsIndex)
-            #vidcap.set(cv2.CAP_PROP_POS_FRAMES, frameNum)   #sets the frame to read
-            #success,image = vidcap.read()
-            if fvs.stopped:
-                break
+            print("Analyzing video " + videoFileName)
+            gamestate = Gamestate()
+            fvs.removedFrames = frameNum  #incase we started at not 0
+            gamestate.count = frameNum
 
-            frameNumBeforeChange = frameNum
-            #if current course is empty, loop until we find one
-            if gamestate.currentCourse == "":
-                skipFrames = findCourse(image, gamestate, fvs, fvsIndex)
-                if gamestate.checkingOnceForRaceStart:
-                    gamestate.checkingOnceForRaceStart = False
-                    if gamestate.currentCourse == "":
-                        frameNum -= 775
-                        gamestate.count -= 775
-                if gamestate.currentCourse == "":  #didnt find one, skip 110 frames, below lap time is still for 110
-                    if gamestate.searchingForLuigiRestart:
-                        #we had skipped 400 frames so if this is false go back 400
-                        frameNum -= 400
-                        gamestate.count -= 400
-                        gamestate.searchingForLuigiRestart = False
-                    frameNum += 110
-                    gamestate.count += 110
-                else:
-                    if gamestate.searchingForLuigiRestart:
-                        #print(gamestate.count, "We did restart Luigi Raceway!")
-                        gamestate.searchingForLuigiRestart = False
-                    if skipFrames != 0:  #if we want to skip frames to first item box
-                        print(gamestate.count, "Skipping to right before first item set in course")
-                        frameNum += skipFrames
-                        gamestate.count += skipFrames
-                        gamestate.checkStillInCourse = True
-                    continue
-            elif gamestate.currentCourse == "FrappeSnowland" or  gamestate.currentCourse == "WarioStadium" or gamestate.noItemsToadsTurnpike:
-                #Skip to just look for black screen, since there will never be items
-                print(gamestate.count, "No items course, searching for black screen...")
-                frameNum += 40  #based on lowest black screen framecount (resets - 40 frames)
-                gamestate.count += 40
-            elif gamestate.checkStillInCourse:
-                print(gamestate.count, "Will now check that we're still in this race")
-                #this function will do any variable resetting if we are not in the course anymore
-                checkStillInCourse(image, gamestate)
-            #if we're in a course and we have not found an item - try to find an item or a black screen
-            elif not gamestate.foundAnItem and not gamestate.foundGivenItem:
-                findAnItem(image, gamestate)
-                if not gamestate.foundAnItem:  #didnt find item
-                    frameNum += 25  #based on fastest roulette (on royal raceway)
-                    gamestate.count += 25
-                else:
-                    continue
-            #if we're in a course and we have found an item
-            elif gamestate.foundAnItem and not gamestate.foundGivenItem and not gamestate.foundBlankItem:
-                findFirstBlankInRoulette(image, gamestate)
-                if not gamestate.foundBlankItem:  #still havent found the first blank
-                    frameNum += 4   #5 frames of blanks so 4 should always hit
-                    gamestate.count += 4
-                else:  #found the blank item
-                    continue
-            #if we're in a course and we have found the blank item, go backwards until we hit the last item
-            elif gamestate.foundAnItem and not gamestate.foundGivenItem:
-                findGivenItem(image, gamestate)
-                if not gamestate.foundGivenItem:  #still havent nailed down the given item
-                    frameNum -= 1
-                    gamestate.count -= 1
-                else:  #found the given item
-                    continue
-            #if we got a boo, find the item it gives us / try to find no boo, then go backwards then forwards
-            elif gamestate.foundGivenItem and gamestate.lastGivenItem == 'Boo' and not gamestate.foundNoBoo:
-                findBooItem(image, gamestate)
-                if not gamestate.foundNoBoo:
-                    frameNum += 5*30  #skip ahead five seconds
-                    gamestate.count += 5*30
-                else:
-                    frameNum -= 5*30  #skip back once
-                    gamestate.count -= 5*30
-                    continue
-            #If we just got a boo, find the item the boo gives you
-            #Once we record this next item, this elif will no longer hit
-            #THIS SECOND 1 FOR INDEXING IS IMPORTANT IF THE ITEMSTATS LIST IS CHANGED
-            elif gamestate.foundGivenItem and gamestate.lastGivenItem == 'Boo' and gamestate.foundNoBoo:
-                findBooItem(image, gamestate)
-                #First check if the boo gave us no item - we want to skip 86 frames if it did
-                #91 frames of time from first frame of first blink to last frame of BOO item on screen
-                #This could be changed - but this makes sure we dont find a boo as a normal item if we
-                #   enter the find item loop too early
-                if not gamestate.foundAnItem and not gamestate.foundGivenItem:
-                    frameNum += 91
-                    gamestate.count += 91
-                if gamestate.lastGivenItem == 'Boo':
-                    frameNum += 5
-                    gamestate.count += 5
-                else:  #found the boo item
-                    continue
-            #if we just determined the given item
-            #try to find no item, black screen, or determine if we're in another item roulette
-            #If we're in another roulette, cant just look every x frames since the same item could
-            #   be the frame we found in the new roulette, but since its the same it wont register as new
-            #Do pairs of frames every 20 frames to see if they have different items
-            elif gamestate.foundGivenItem:
-                findNoItem(image, gamestate)
-                if not gamestate.foundNoItem:  #still have item in inventory
-                    #should be able to do 20 frames, gives enough time if we go into new
-                    #roulette for us to realize that between the 20-25th last 5 frames
-                    #of the roulette
-                    if gamestate.goToAdjacentFrame or gamestate.goToSecondAdjacentFrame:
-                        frameNum += 1
-                        gamestate.count += 1
-                    #we did go to adjacent frame twice, so only skip 18 frames not 19
-                    elif gamestate.foundDoubleAfterTriple or gamestate.foundSingleAfterTriple:
-                        frameNum += 18
-                        gamestate.count += 18
+            #Loop to read images from video
+            while True:
+                fvsIndex = frameNum - fvs.removedFrames
+                #print("fvsIndex:", fvsIndex)
+                success, image = fvs.read(fvsIndex)
+                #vidcap.set(cv2.CAP_PROP_POS_FRAMES, frameNum)   #sets the frame to read
+                #success,image = vidcap.read()
+                if fvs.stopped:
+                    break
+
+                frameNumBeforeChange = frameNum
+                #if current course is empty, loop until we find one
+                if gamestate.currentCourse == "":
+                    skipFrames = findCourse(image, gamestate, fvs, fvsIndex)
+                    if gamestate.checkingOnceForRaceStart:
+                        gamestate.checkingOnceForRaceStart = False
+                        if gamestate.currentCourse == "":
+                            frameNum -= 775
+                            gamestate.count -= 775
+                    if gamestate.currentCourse == "":  #didnt find one, skip 110 frames, below lap time is still for 110
+                        if gamestate.searchingForLuigiRestart:
+                            #we had skipped 400 frames so if this is false go back 400
+                            frameNum -= 400
+                            gamestate.count -= 400
+                            gamestate.searchingForLuigiRestart = False
+                        frameNum += 110
+                        gamestate.count += 110
                     else:
-                        frameNum += 19
-                        gamestate.count += 19
-                else:  #found no item
-                    continue
-
-            #Very last thing for EVERY frame inside a course is check for black screen.
-            #Reset all vars in function if we find it
-            if gamestate.currentCourse != "":
-                findBlackScreen(image, gamestate)
-                #if we didnt find a black screen, current course is still != ""
-                #now search for race finish - non resetting races
-                if gamestate.currentCourse != "":
-                    findEndOfRace(image, gamestate)
-                    if gamestate.currentCourse == "":  #Found end of race
-                        if gamestate.checkingOnceForRaceStart:
-                            frameAdvance = courses[gamestate.currentCourseIndex][5]
-                            print(gamestate.count, "Checking ahead", frameAdvance, "frames")
-                            frameNum += frameAdvance
-                            gamestate.count += frameAdvance
-                            fvs.skipRemovingFrames = True
+                        if gamestate.searchingForLuigiRestart:
+                            #print(gamestate.count, "We did restart Luigi Raceway!")
+                            gamestate.searchingForLuigiRestart = False
+                        if skipFrames != 0:  #if we want to skip frames to first item box
+                            print(gamestate.count, "Skipping to right before first item set in course")
+                            frameNum += skipFrames
+                            gamestate.count += skipFrames
+                            gamestate.checkStillInCourse = True
+                        continue
+                elif gamestate.currentCourse == "FrappeSnowland" or  gamestate.currentCourse == "WarioStadium" or gamestate.noItemsToadsTurnpike:
+                    #Skip to just look for black screen, since there will never be items
+                    print(gamestate.count, "No items course, searching for black screen...")
+                    frameNum += 40  #based on lowest black screen framecount (resets - 40 frames)
+                    gamestate.count += 40
+                elif gamestate.checkStillInCourse:
+                    print(gamestate.count, "Will now check that we're still in this race")
+                    #this function will do any variable resetting if we are not in the course anymore
+                    checkStillInCourse(image, gamestate)
+                #if we're in a course and we have not found an item - try to find an item or a black screen
+                elif not gamestate.foundAnItem and not gamestate.foundGivenItem:
+                    findAnItem(image, gamestate)
+                    if not gamestate.foundAnItem:  #didnt find item
+                        frameNum += 25  #based on fastest roulette (on royal raceway)
+                        gamestate.count += 25
+                    else:
+                        continue
+                #if we're in a course and we have found an item
+                elif gamestate.foundAnItem and not gamestate.foundGivenItem and not gamestate.foundBlankItem:
+                    findFirstBlankInRoulette(image, gamestate)
+                    if not gamestate.foundBlankItem:  #still havent found the first blank
+                        frameNum += 4   #5 frames of blanks so 4 should always hit
+                        gamestate.count += 4
+                    else:  #found the blank item
+                        continue
+                #if we're in a course and we have found the blank item, go backwards until we hit the last item
+                elif gamestate.foundAnItem and not gamestate.foundGivenItem:
+                    findGivenItem(image, gamestate)
+                    if not gamestate.foundGivenItem:  #still havent nailed down the given item
+                        frameNum -= 1
+                        gamestate.count -= 1
+                    else:  #found the given item
+                        continue
+                #if we got a boo, find the item it gives us / try to find no boo, then go backwards then forwards
+                elif gamestate.foundGivenItem and gamestate.lastGivenItem == 'Boo' and not gamestate.foundNoBoo:
+                    findBooItem(image, gamestate)
+                    if not gamestate.foundNoBoo:
+                        frameNum += 5*30  #skip ahead five seconds
+                        gamestate.count += 5*30
+                    else:
+                        frameNum -= 5*30  #skip back once
+                        gamestate.count -= 5*30
+                        continue
+                #If we just got a boo, find the item the boo gives you
+                #Once we record this next item, this elif will no longer hit
+                #THIS SECOND 1 FOR INDEXING IS IMPORTANT IF THE ITEMSTATS LIST IS CHANGED
+                elif gamestate.foundGivenItem and gamestate.lastGivenItem == 'Boo' and gamestate.foundNoBoo:
+                    findBooItem(image, gamestate)
+                    #First check if the boo gave us no item - we want to skip 86 frames if it did
+                    #91 frames of time from first frame of first blink to last frame of BOO item on screen
+                    #This could be changed - but this makes sure we dont find a boo as a normal item if we
+                    #   enter the find item loop too early
+                    if not gamestate.foundAnItem and not gamestate.foundGivenItem:
+                        frameNum += 91
+                        gamestate.count += 91
+                    if gamestate.lastGivenItem == 'Boo':
+                        frameNum += 5
+                        gamestate.count += 5
+                    else:  #found the boo item
+                        continue
+                #if we just determined the given item
+                #try to find no item, black screen, or determine if we're in another item roulette
+                #If we're in another roulette, cant just look every x frames since the same item could
+                #   be the frame we found in the new roulette, but since its the same it wont register as new
+                #Do pairs of frames every 20 frames to see if they have different items
+                elif gamestate.foundGivenItem:
+                    findNoItem(image, gamestate)
+                    if not gamestate.foundNoItem:  #still have item in inventory
+                        #should be able to do 20 frames, gives enough time if we go into new
+                        #roulette for us to realize that between the 20-25th last 5 frames
+                        #of the roulette
+                        if gamestate.goToAdjacentFrame or gamestate.goToSecondAdjacentFrame:
+                            frameNum += 1
+                            gamestate.count += 1
+                        #we did go to adjacent frame twice, so only skip 18 frames not 19
+                        elif gamestate.foundDoubleAfterTriple or gamestate.foundSingleAfterTriple:
+                            frameNum += 18
+                            gamestate.count += 18
                         else:
-                            frameNum += 300
-                            gamestate.count += 300
-                            #wont ever go back on these 300 so no need to skipremovingframes
-                else:  #we did find a black screen
-                    #check if we are restarting on luigi raceway
-                    if gamestate.currentCourseIndex == 0:
-                        #about 400 frames between black screen on restarting luigi raceway and last frame of race start
-                        print(gamestate.count, "Checking if we are restarting on Luigi Raceway...")
-                        frameNum += 400
-                        gamestate.count += 400
-                        gamestate.searchingForLuigiRestart = True
-                        fvs.skipRemovingFrames = True
-            
+                            frameNum += 19
+                            gamestate.count += 19
+                    else:  #found no item
+                        continue
 
-            #At the very end of each frame analysis, check if we need to remove frames from list
-            #if the next index will be >800, remove the number of frames above 800 we are from the beginning
-            #At this point frameNum is pointing to the next frame we want to look at
-            if ((frameNum - fvs.removedFrames) > fvs.FrameCutoff) and not fvs.skipRemovingFrames:
-                framesToRemove = (frameNum - fvs.removedFrames) - fvs.FrameCutoff
-                fvs.removeFrames(framesToRemove)
-                #print("Removed ", framesToRemove, "Frames")
-                #other thread should fill up the array to 1000 frames again
-            elif fvs.skipRemovingFrames:
-                fvs.skipRemovingFrames = False  #reset this after skipping directly above
+                #Very last thing for EVERY frame inside a course is check for black screen.
+                #Reset all vars in function if we find it
+                if gamestate.currentCourse != "":
+                    findBlackScreen(image, gamestate)
+                    #if we didnt find a black screen, current course is still != ""
+                    #now search for race finish - non resetting races
+                    if gamestate.currentCourse != "":
+                        findEndOfRace(image, gamestate)
+                        if gamestate.currentCourse == "":  #Found end of race
+                            if gamestate.checkingOnceForRaceStart:
+                                frameAdvance = courses[gamestate.currentCourseIndex][5]
+                                print(gamestate.count, "Checking ahead", frameAdvance, "frames")
+                                frameNum += frameAdvance
+                                gamestate.count += frameAdvance
+                                fvs.skipRemovingFrames = True
+                            else:
+                                frameNum += 300
+                                gamestate.count += 300
+                                #wont ever go back on these 300 so no need to skipremovingframes
+                    else:  #we did find a black screen
+                        #check if we are restarting on luigi raceway
+                        if gamestate.currentCourseIndex == 0:
+                            #about 400 frames between black screen on restarting luigi raceway and last frame of race start
+                            print(gamestate.count, "Checking if we are restarting on Luigi Raceway...")
+                            frameNum += 400
+                            gamestate.count += 400
+                            gamestate.searchingForLuigiRestart = True
+                            fvs.skipRemovingFrames = True
+
+                #At the very end of each frame analysis, check if we need to remove frames from list
+                #if the next index will be >800, remove the number of frames above 800 we are from the beginning
+                #At this point frameNum is pointing to the next frame we want to look at
+                if ((frameNum - fvs.removedFrames) > fvs.FrameCutoff) and not fvs.skipRemovingFrames:
+                    framesToRemove = (frameNum - fvs.removedFrames) - fvs.FrameCutoff
+                    fvs.removeFrames(framesToRemove)
+                    #print("Removed ", framesToRemove, "Frames")
+                    #other thread should fill up the array to 1000 frames again
+                elif fvs.skipRemovingFrames:
+                    fvs.skipRemovingFrames = False  #reset this after skipping directly above
+                
+                if frameNum > endFrame:
+                    fvs.stopped = True
+            
+            #At end of the current time range
+            print("End of time range")
+            fvs.ResetForNewVideo()
 
         #At the end of the current vid
         print("Done!")
@@ -944,16 +990,6 @@ def findBlackScreen(image, gamestate):
     if min_val <= .001:
         print(gamestate.count, "Found Black Screen! Resetting gamestate")
         gamestate.resetRaceVars()
-        '''
-        gamestate.currentCourse = ""
-        gamestate.foundAnItem = False
-        gamestate.foundNoItem = False
-        gamestate.foundBlankItem = False
-        gamestate.foundGivenItem = False
-        gamestate.inNewItemRoulette = False
-        gamestate.lastItemBooItem = False
-        gamestate.place = 8
-        '''
 
 
 #Like finding a black screen, so do similar var resets
@@ -970,16 +1006,6 @@ def findEndOfRace(image, gamestate):
             print(gamestate.count, "Found end of race! We're on a non-resetting race, check for next course race start")
             gamestate.checkingOnceForRaceStart = True
         gamestate.resetRaceVars()
-        '''
-        gamestate.currentCourse = ""
-        gamestate.foundAnItem = False
-        gamestate.foundNoItem = False
-        gamestate.foundBlankItem = False
-        gamestate.foundGivenItem = False
-        gamestate.inNewItemRoulette = False
-        gamestate.lastItemBooItem = False
-        gamestate.place = 8
-        '''
 
 
 #Like finding a black screen, so do similar var resets
@@ -992,15 +1018,6 @@ def checkStillInCourse(image, gamestate):
     if min_val > .02:
         print(gamestate.count, "Between start of race and frame skip to first item box set, we quit out of the race. Resetting gamestate")
         gamestate.resetRaceVars()
-        '''
-        gamestate.currentCourse = ""
-        gamestate.foundAnItem = False
-        gamestate.foundNoItem = False
-        gamestate.foundBlankItem = False
-        gamestate.foundGivenItem = False
-        gamestate.inNewItemRoulette = False
-        gamestate.place = 8
-        '''
     else:
         print(gamestate.count, "Still in course, continue as normal")
     #did the checking, reset this
@@ -1021,5 +1038,36 @@ def localSetup():
     total_pic = cv2.imread("./otherPics/" + 'total.png')
     global time_pic
     time_pic = cv2.imread("./otherPics/" + 'time.png')
+
+def getVideoRanges():
+    #Debug
+    '''
+    cap = cv2.VideoCapture('./videosToAnalyze/2021-07-17 17-44-28.mkv')
+    cap.set(cv2.CAP_PROP_POS_FRAMES, (49 + 26/60)*29.97*60) 
+    success, r = cap.read()
+    cv2.imwrite("./test.png", r)
+    exit()
+    '''
+    data = []
+    try:
+        with open('videoRanges.csv', newline='') as f:
+            reader = csv.reader(f)
+            data = list(reader)
+    except:
+        pass
+    videoRanges = {}
+    for line in data:
+        for i in range(1, len(line), 2):
+            if i+1 <= len(line[1:]):
+                if line[0] in videoRanges:
+                    tmp = videoRanges[line[0]]
+                    tmp.append((int(line[i]), int(line[i+1])))
+                    videoRanges[line[0]] = tmp
+                else:
+                    videoRanges[line[0]] = [(int(line[i]), int(line[i+1]))]
+            else:
+                raise ValueError('Video Ranges must be in format: filename, start minute (integer) to process, end minute to process. in pairs of two.')
+    return videoRanges
+
 
 main()

@@ -17,6 +17,7 @@ Requirements:
 -psutil
 
 Usage (preferred):
+-Create videoRanges file videoRanges.csv in root folder, using format below
 -Navigate to root folder in powershell
 -py main.py
 
@@ -56,13 +57,12 @@ Video Ranges:
 A text file "videoRanges.csv" created in the root folder. the text file has the following format
 video filename, start minute of video to process, end minute of video to process,  start minute of video to process, end minute of video to process, etc.
 minutes are integers and can be 0 or after video ends. put a 1 minute buffer to each time 5,10 -> 4,11
+e.g. 
+2021-07-17 17-44-28.mkv,4,8,43,50
+2021-08-09 17-23-59.mkv,0,150
 
 ToDo:
-error - same video
-starting at 7192
-['LuigiRaceway', 'RedShell', 3, 8140, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Star', 3, 8927, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Star', 4, 9700, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Lightning', 4, 10542, '2021-07-17 17-44-28.mkv']
-starting at 0
-['LuigiRaceway', 'RedShell', 3, 8159, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Star', 3, 8953, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Star', 4, 9727, '2021-07-17 17-44-28.mkv'], ['LuigiRaceway', 'Lightning', 4, 10563, '2021-07-17 17-44-28.mkv']
+
 '''
 
 import cv2
@@ -200,18 +200,13 @@ class FileVideoStream:
     def update(self):
         # keep looping infinitely
         while True:
-            # if the thread indicator variable is set, stop the
-            # thread
+            # if the thread indicator variable is set, stop the thread
             if self.stopped:
                 return
             # otherwise, ensure the list has room in it
             if self.notFull() and not self.CurrentlyRemovingFrames:
                 # read the next frame from the file
-                #if i != self.stream.get(cv2.CAP_PROP_POS_FRAMES) - 1:
-                #    print("ASDADDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
-                #print(self.stream.get(cv2.CAP_PROP_POS_FRAMES), i)
                 grabbed, frame = self.stream.read()  
-                #print(len(self.Frames))
                 # if the `grabbed` boolean is `False`, then we have
                 # reached the end of the video file
                 if not grabbed:
@@ -219,10 +214,6 @@ class FileVideoStream:
                     return
                 # add the frame to the list
                 self.Frames.append(frame[:self.yOffset , self.xOffset:].copy())
-            #DEBUG
-            #elif self.CurrentlyRemovingFrames:
-            #    print("WARNING WE MAYBE WOULD HAVE SKIPPED THIS FRAME BEFORE!!!!!!!!!!------------------!!!!!!!!!!!!!!!!!")
-
 
     def ResetForNewVideo(self):
         self.Frames.clear()
@@ -247,11 +238,11 @@ class FileVideoStream:
                 return True, self.Frames[i]
             except:
                 print("HAVENT READ THE REQUESTED FRAME YET FROM THE VIDEO!-----------------------------------------")
-                print("waiting until we're back up to", int((self.maxNumFrames * .7 )), "read frames")
+                print("waiting until we're back up to", int((self.maxNumFrames * .5 )), "read frames")
                 #print("waiting until we're back up to", self.maxNumFrames, "read frames")
                 #while self.notFull():
-                print("Sleeping", round(self.timeToFull * .7, 2), "seconds")
-                time.sleep(round(self.timeToFull * .7, 2))
+                print("Sleeping", round((self.timeToFull * (1-(len(self.Frames) / self.maxNumFrames))) * .5, 2), "seconds")  #time it takes to fill half of the missing frames
+                time.sleep(round((self.timeToFull * (1-(len(self.Frames) / self.maxNumFrames))) * .7, 2))
                 while len(self.Frames) < int((self.maxNumFrames * .7 )):   #less than 70% full
                     time.sleep(0.1)
                 #print("Done. We can now continue")
@@ -325,10 +316,7 @@ def main():
             #Loop to read images from video
             while True:
                 fvsIndex = frameNum - fvs.removedFrames
-                #print("fvsIndex:", fvsIndex)
                 success, image = fvs.read(fvsIndex)
-                #vidcap.set(cv2.CAP_PROP_POS_FRAMES, frameNum)   #sets the frame to read
-                #success,image = vidcap.read()
                 if fvs.stopped:
                     break
 
@@ -386,7 +374,7 @@ def main():
                         continue
                 #if we're in a course and we have found the blank item, go backwards until we hit the last item
                 elif gamestate.foundAnItem and not gamestate.foundGivenItem:
-                    findGivenItem(image, gamestate)
+                    findGivenItem(image, gamestate, fvs, fvsIndex)
                     if not gamestate.foundGivenItem:  #still havent nailed down the given item
                         frameNum -= 1
                         gamestate.count -= 1
@@ -394,7 +382,7 @@ def main():
                         continue
                 #if we got a boo, find the item it gives us / try to find no boo, then go backwards then forwards
                 elif gamestate.foundGivenItem and gamestate.lastGivenItem == 'Boo' and not gamestate.foundNoBoo:
-                    findBooItem(image, gamestate)
+                    findBooItem(image, gamestate, fvs, fvsIndex)
                     if not gamestate.foundNoBoo:
                         frameNum += 5*30  #skip ahead five seconds
                         gamestate.count += 5*30
@@ -406,7 +394,7 @@ def main():
                 #Once we record this next item, this elif will no longer hit
                 #THIS SECOND 1 FOR INDEXING IS IMPORTANT IF THE ITEMSTATS LIST IS CHANGED
                 elif gamestate.foundGivenItem and gamestate.lastGivenItem == 'Boo' and gamestate.foundNoBoo:
-                    findBooItem(image, gamestate)
+                    findBooItem(image, gamestate, fvs, fvsIndex)
                     #First check if the boo gave us no item - we want to skip 86 frames if it did
                     #91 frames of time from first frame of first blink to last frame of BOO item on screen
                     #This could be changed - but this makes sure we dont find a boo as a normal item if we
@@ -625,7 +613,7 @@ def findAnItem(image, gamestate):
 #       Wwhich is essentially like finding no item, so reset the vars similarly to end of item
 #WARNING: If there are two boos in a row from different item boxes, this could skip the item
 #    that was given from the first boo
-def findBooItem(image, gamestate):
+def findBooItem(image, gamestate, fvs, fvsIndex):
     img_itemBoxArea = image[72:192, 1167-560:1323-560]  #image[30:200, 1100:1400]   #image[72:192, 1167:1323]
     foundItemName = None
     #First try to not find a boo
@@ -675,6 +663,12 @@ def findBooItem(image, gamestate):
         elif foundItemName is not None:
             gamestate.foundGivenItem = True
             getPlace(image, gamestate)  #get the current place
+            #Make sure we're not doing finish line glitch etc. where place could be 1 but get 8th place item
+            if gamestate.place == 1 and foundItemName in ["TripleRedShells", "Lightning", "Star", "TripleMushrooms", "GoldenMushroom", "BlueShell"]:
+                gamestate.place = 8
+            elif gamestate.place > 1 and gamestate.place < 8:  #want to get average because the place counter doesnt update very frequently
+                success, imagepl = fvs.read(fvsIndex - 5)  #if we're in a middle place, get the place closer to the first frame of the given item appearing on screen
+                getPlace(imagepl, gamestate)  #get the current place
             print("Current place is:", gamestate.place)
             tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
             gamestate.lastGivenItem = foundItemName
@@ -684,7 +678,9 @@ def findBooItem(image, gamestate):
                 writer.writerow(tmp)
             itemStats.append(tmp)
             print("Found given item")
-            print(itemStats[-50:])  #only print last 50 incase there's a ton from multiple videos
+            if len(itemStats) > 20:
+                del itemStats[0]
+            print(itemStats)
             print(gamestate.count, "Will now try to find NO item")
             #reset vars when we find the given item
             gamestate.foundAnItem = False
@@ -716,7 +712,7 @@ def findFirstBlankInRoulette(image, gamestate):
 
 
 
-def findGivenItem(image, gamestate):
+def findGivenItem(image, gamestate, fvs, fvsIndex):
     img_itemBoxArea = image[72:192, 1167-560:1323-560]  # image[30:200, 1100:1400]
     foundItemName = None
     print(gamestate.count, "Trying to find given item...")
@@ -724,7 +720,6 @@ def findGivenItem(image, gamestate):
         template = item[1]
         method = item[2]
         threshold = item[3]
-
         res = cv2.matchTemplate(img_itemBoxArea, template, method)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
         #print(gamestate.count, item[0], min_val)
@@ -747,6 +742,11 @@ def findGivenItem(image, gamestate):
     else:
         gamestate.foundGivenItem = True
         getPlace(image, gamestate)  #get the current place
+        if gamestate.place == 1 and foundItemName in ["TripleRedShells", "Lightning", "Star", "TripleMushrooms", "GoldenMushroom", "BlueShell"]:
+            gamestate.place = 8
+        elif gamestate.place > 1 and gamestate.place < 8:  #want to get average because the place counter doesnt update very frequently
+            success, imagepl = fvs.read(fvsIndex - 5)  #if we're in a middle place, get the place closer to the first frame of the given item appearing on screen
+            getPlace(imagepl, gamestate)  #get the current place
         print("Current place is:", gamestate.place)
         tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
         gamestate.lastGivenItem = foundItemName
@@ -756,6 +756,8 @@ def findGivenItem(image, gamestate):
             writer.writerow(tmp)
         itemStats.append(tmp)
         print("Found given item")
+        if len(itemStats) > 20:
+            del itemStats[0]
         print(itemStats)
         print(gamestate.count, "Will now try to find NO item")
         #reset vars when we find the given item
@@ -979,11 +981,9 @@ def findNoItem(image, gamestate):
 
 def findBlackScreen(image, gamestate):
     img_playArea = image[:, :]
-
     #need to invert the image to do matching well - essentially matching all white screen
     img_playArea = 255-img_playArea
     blackScreenG = 255-blackScreen
-
     res = cv2.matchTemplate(img_playArea, blackScreenG, cv2.TM_SQDIFF_NORMED)
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
     #print(min_val)
@@ -1040,14 +1040,6 @@ def localSetup():
     time_pic = cv2.imread("./otherPics/" + 'time.png')
 
 def getVideoRanges():
-    #Debug
-    '''
-    cap = cv2.VideoCapture('./videosToAnalyze/2021-07-17 17-44-28.mkv')
-    cap.set(cv2.CAP_PROP_POS_FRAMES, (49 + 26/60)*29.97*60) 
-    success, r = cap.read()
-    cv2.imwrite("./test.png", r)
-    exit()
-    '''
     data = []
     try:
         with open('videoRanges.csv', newline='') as f:
@@ -1058,6 +1050,8 @@ def getVideoRanges():
     videoRanges = {}
     for line in data:
         for i in range(1, len(line), 2):
+            if i > len(line) - 1:
+                break
             if i+1 <= len(line[1:]):
                 if line[0] in videoRanges:
                     tmp = videoRanges[line[0]]

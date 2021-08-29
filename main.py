@@ -37,7 +37,7 @@ Flowchart:
 > Record the last item put into item roulette list
 3.1 If item was a Boo - do the complicated find Boo item procedure, then go to 2.
 4. Try to find No item - indicating it was used and to go back to trying to find a new roulette
-4.1 Check that we are not in a new roulette, since item box at top of screen doesnt go away if
+4.1 Check that we are not in a new roulette, since item box at top of screen doesn't go away if
     item is spammed into another box
 > Found No item
 > Go to 2
@@ -50,7 +50,7 @@ Multi-Threading:
     where number removed is the difference between the next frame and frame cutoff value
     e.g. frame cutoff 800 next frame is 920, remove 120 frames from start of list
     list will then keep populating the next 120 free spots at end of the list
--allow skipping this for major skips forward, so we dont remove a frame we need if we need to go backwards
+-allow skipping this for major skips forward, so we don't remove a frame we need if we need to go backwards
 these minus frames are never done more than once at a time, except for one for finding given item (-1 for max 5 frames)
 
 Video Ranges:
@@ -97,7 +97,7 @@ class Gamestate:
     lastItemBooItem = False  #When the boo gives us an item this is True
 
     searchingForLuigiRestart = False  #skipping ahead to see if we are back on luigi raceway
-    checkStillInCourse = False  #after skipping frames at race start, check we didnt exit out of race for some reason
+    checkStillInCourse = False  #after skipping frames at race start, check we didn't exit out of race for some reason
     checkingOnceForRaceStart = False  #after finding race end, we're checking for the race start of the next race
                                 if we just ended on a non resetting course
 
@@ -179,9 +179,9 @@ class FileVideoStream:
         self.yOffset = 1020
         self.timeToFull = 0   #seconds requred to buffer all x frames from an empty list
         self.FrameCutoff = 200  #highest is -150 possible for finding boo 
-        self.skipRemovingFrames = False  #this is so for skipping ahead a lot (700 frames, i dont need the framecutoff to be huge
+        self.skipRemovingFrames = False  #this is so for skipping ahead a lot (700 frames, i don't need the framecutoff to be huge
         self.CurrentlyRemovingFrames = False  #lock process so new thread cannot add frames while we are currently removing them
-        #get how many frames we can reasonbly fit with the amount of memory we have
+        #get how many frames we can reasonably fit with the amount of memory we have
         #leave 1GB extra
         stats = psutil.virtual_memory()  # returns a named tuple
         available = getattr(stats, 'available')
@@ -237,7 +237,7 @@ class FileVideoStream:
                 #print("Reading Frame", i)
                 return True, self.Frames[i]
             except:
-                print("HAVENT READ THE REQUESTED FRAME YET FROM THE VIDEO!-----------------------------------------")
+                print("HAVEN'T READ THE REQUESTED FRAME YET FROM THE VIDEO!-----------------------------------------")
                 print("waiting until we're back up to", int((self.maxNumFrames * .5 )), "read frames")
                 #print("waiting until we're back up to", self.maxNumFrames, "read frames")
                 #while self.notFull():
@@ -245,6 +245,8 @@ class FileVideoStream:
                 time.sleep(round((self.timeToFull * (1-(len(self.Frames) / self.maxNumFrames))) * .7, 2))
                 while len(self.Frames) < int((self.maxNumFrames * .7 )):   #less than 70% full
                     time.sleep(0.1)
+                    if self.stopped:  #if in this loop at end of video but there's no more frames and we stopped
+                        break
                 #print("Done. We can now continue")
 
     def notFull(self):
@@ -329,7 +331,7 @@ def main():
                         if gamestate.currentCourse == "":
                             frameNum -= 775
                             gamestate.count -= 775
-                    if gamestate.currentCourse == "":  #didnt find one, skip 110 frames, below lap time is still for 110
+                    if gamestate.currentCourse == "":  #didn't find one, skip 110 frames, below lap time is still for 110
                         if gamestate.searchingForLuigiRestart:
                             #we had skipped 400 frames so if this is false go back 400
                             frameNum -= 400
@@ -359,7 +361,7 @@ def main():
                 #if we're in a course and we have not found an item - try to find an item or a black screen
                 elif not gamestate.foundAnItem and not gamestate.foundGivenItem:
                     findAnItem(image, gamestate)
-                    if not gamestate.foundAnItem:  #didnt find item
+                    if not gamestate.foundAnItem:  #didn't find item
                         frameNum += 25  #based on fastest roulette (on royal raceway)
                         gamestate.count += 25
                     else:
@@ -367,7 +369,7 @@ def main():
                 #if we're in a course and we have found an item
                 elif gamestate.foundAnItem and not gamestate.foundGivenItem and not gamestate.foundBlankItem:
                     findFirstBlankInRoulette(image, gamestate)
-                    if not gamestate.foundBlankItem:  #still havent found the first blank
+                    if not gamestate.foundBlankItem:  #still haven't found the first blank
                         frameNum += 4   #5 frames of blanks so 4 should always hit
                         gamestate.count += 4
                     else:  #found the blank item
@@ -375,7 +377,7 @@ def main():
                 #if we're in a course and we have found the blank item, go backwards until we hit the last item
                 elif gamestate.foundAnItem and not gamestate.foundGivenItem:
                     findGivenItem(image, gamestate, fvs, fvsIndex)
-                    if not gamestate.foundGivenItem:  #still havent nailed down the given item
+                    if not gamestate.foundGivenItem:  #still haven't nailed down the given item
                         frameNum -= 1
                         gamestate.count -= 1
                     else:  #found the given item
@@ -397,7 +399,7 @@ def main():
                     findBooItem(image, gamestate, fvs, fvsIndex)
                     #First check if the boo gave us no item - we want to skip 86 frames if it did
                     #91 frames of time from first frame of first blink to last frame of BOO item on screen
-                    #This could be changed - but this makes sure we dont find a boo as a normal item if we
+                    #This could be changed - but this makes sure we don't find a boo as a normal item if we
                     #   enter the find item loop too early
                     if not gamestate.foundAnItem and not gamestate.foundGivenItem:
                         frameNum += 91
@@ -435,7 +437,7 @@ def main():
                 #Reset all vars in function if we find it
                 if gamestate.currentCourse != "":
                     findBlackScreen(image, gamestate)
-                    #if we didnt find a black screen, current course is still != ""
+                    #if we didn't find a black screen, current course is still != ""
                     #now search for race finish - non resetting races
                     if gamestate.currentCourse != "":
                         findEndOfRace(image, gamestate)
@@ -491,7 +493,7 @@ def main():
 
 
 
-#Although it doesnt seem like it, there is a lot of variance in the color of the places (capture card related?)
+#Although it doesn't seem like it, there is a lot of variance in the color of the places (capture card related?)
 #enough to where the darkest 1st has the same color as the brightest 2nd
 def getPlace(image, gamestate):
     #First we can rule out 8th, since it's very common, with basic color detection
@@ -505,7 +507,7 @@ def getPlace(image, gamestate):
     #Now do matching for other places
     #Masking took a while to figure out, it may not be perfect
     image_place = image[700:980, 600-560:930-560]  #[650:880, 750:930]
-    #dont know if inversion helps - it seems to for black screens
+    #don't know if inversion helps - it seems to for black screens
     image_place = 255-image_place
     maxs = []
     for it, place in enumerate(places[:-1]):
@@ -609,7 +611,7 @@ def findAnItem(image, gamestate):
 
 #Found one occurrence when using a boo 45 seconds after receiving it
 #So first find a frame without a boo, then go back and go forwards to find the item given
-#  IMPORTANT: If the item is a blank, that means it is blinking and the boo didnt give an item
+#  IMPORTANT: If the item is a blank, that means it is blinking and the boo didn't give an item
 #       Wwhich is essentially like finding no item, so reset the vars similarly to end of item
 #WARNING: If there are two boos in a row from different item boxes, this could skip the item
 #    that was given from the first boo
@@ -625,7 +627,7 @@ def findBooItem(image, gamestate, fvs, fvsIndex):
         res = cv2.matchTemplate(img_itemBoxArea, template, method)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
         if method == cv2.TM_SQDIFF_NORMED:
-            #notice these comparitors are flipped because i dont want to find it!
+            #notice these comparitors are flipped because i don't want to find it!
             if min_val > threshold:
                 gamestate.foundNoBoo = True
                 print(gamestate.count, "Found NO Boo. Now go back and search forward to find item")
@@ -666,7 +668,7 @@ def findBooItem(image, gamestate, fvs, fvsIndex):
             #Make sure we're not doing finish line glitch etc. where place could be 1 but get 8th place item
             if gamestate.place == 1 and foundItemName in ["TripleRedShells", "Lightning", "Star", "TripleMushrooms", "GoldenMushroom", "BlueShell"]:
                 gamestate.place = 8
-            elif gamestate.place > 1 and gamestate.place < 8:  #want to get average because the place counter doesnt update very frequently
+            elif gamestate.place > 1 and gamestate.place < 8:
                 success, imagepl = fvs.read(fvsIndex - 5)  #if we're in a middle place, get the place closer to the first frame of the given item appearing on screen
                 getPlace(imagepl, gamestate)  #get the current place
             print("Current place is:", gamestate.place)
@@ -742,10 +744,12 @@ def findGivenItem(image, gamestate, fvs, fvsIndex):
     else:
         gamestate.foundGivenItem = True
         getPlace(image, gamestate)  #get the current place
+        #Placement doesn't update in game fast enough - 3rd place getting blue shell is common even though its not possible
+        #Therefore only get the place on the frame the item is given - since that's essentially a middle ground / average of places
         if gamestate.place == 1 and foundItemName in ["TripleRedShells", "Lightning", "Star", "TripleMushrooms", "GoldenMushroom", "BlueShell"]:
             gamestate.place = 8
-        elif gamestate.place > 1 and gamestate.place < 8:  #want to get average because the place counter doesnt update very frequently
-            success, imagepl = fvs.read(fvsIndex - 5)  #if we're in a middle place, get the place closer to the first frame of the given item appearing on screen
+        elif gamestate.place > 1 and gamestate.place < 8:  #want to get average because the place counter doesn't update very frequently
+            success, imagepl = fvs.read(fvsIndex - 4)  #if we're in a middle place, get the place closer to the first frame of the given item appearing on screen (on fifth frame of item, go back 4 to first)
             getPlace(imagepl, gamestate)  #get the current place
         print("Current place is:", gamestate.place)
         tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
@@ -767,9 +771,9 @@ def findGivenItem(image, gamestate, fvs, fvsIndex):
 
 #First try to find the same item that was given to us (since that'll be the most common)
     #if we do check the adjascent frame
-#if we dont find it, check the other items
+#if we don't find it, check the other items
     #if we find an item we're in a new roulette
-#if we dont find one, then we reset
+#if we don't find one, then we reset
 #For after getting triple mushrooms, we check the next 2 adjacent frames
 def findNoItem(image, gamestate):
     img_itemBoxArea = image[72:192, 1167-560:1323-560] #image[30:200, 1100:1400]   #image[72:192, 1167:1323]
@@ -939,7 +943,7 @@ def findNoItem(image, gamestate):
                     gamestate.goToSecondAdjacentFrame = False
                     return
     #Now that we are down there, we already checked for the certain items for mushrooms that are the special cases
-    #   if we didnt already exit out on a return statement above, now just check for every item
+    #   if we didn't already exit out on a return statement above, now just check for every item
     #   if we find an item that is different than a blank or the last item given that means we must be in
     #   a new roulette
     for i, item in enumerate(items):
@@ -957,7 +961,7 @@ def findNoItem(image, gamestate):
                     (foundItemName == "DoubleMushrooms" or foundItemName == "Mushroom"):
                     pass
                 elif itemStats[-2][1] == "Boo" and gamestate.lastItemBooItem:
-                    #boo items dont mean we're in a new roulette, it is a given item
+                    #boo items don't mean we're in a new roulette, it is a given item
                     pass
                 else:
                     #found different item, we must be in a new roulette!
@@ -1014,7 +1018,7 @@ def checkStillInCourse(image, gamestate):
     res = cv2.matchTemplate(img_time, time_pic, cv2.TM_SQDIFF_NORMED)
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
     #print(min_val)
-    #This comparison is the opposite becuase we dont want to find this
+    #This comparison is the opposite becuase we don't want to find this
     if min_val > .02:
         print(gamestate.count, "Between start of race and frame skip to first item box set, we quit out of the race. Resetting gamestate")
         gamestate.resetRaceVars()
@@ -1026,7 +1030,7 @@ def checkStillInCourse(image, gamestate):
 
 
 def localSetup():
-    #list of lists of item stats - could be list of tuples, i dont know
+    #list of lists of item stats - could be list of tuples, i don't know
     global itemStats 
     itemStats = []  #[['ItemName', course (string), place (int), count (int) - current frame count],...]
     global items, itemsBooFirst, places, courses, masks, itemNames

@@ -196,5 +196,15 @@ def setup():
      - royal raceway based on old shortcut which gets to items faster
     '''
 
-    return items, places, courses, masks, itemNames
+    global laps
+    laps = []
+    lapsFolderPath = "./laps/"
+    lap1 = cv2.imread(lapsFolderPath + 'lap1.png')
+    lap2 = cv2.imread(lapsFolderPath + 'lap2.png')
+    lap3 = cv2.imread(lapsFolderPath + 'lap3.png')
+    laps.append(("lap1", lap1, cv2.TM_SQDIFF_NORMED))
+    laps.append(("lap2", lap2, cv2.TM_SQDIFF_NORMED))
+    laps.append(("lap3", lap3, cv2.TM_SQDIFF_NORMED))
+
+    return items, places, laps, courses, masks, itemNames
 

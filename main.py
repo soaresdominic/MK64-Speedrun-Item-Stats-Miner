@@ -81,6 +81,7 @@ import math
 
 class Gamestate:
     '''
+    lap = 0  #current lap in the race
     place = 8  #current place in the race
     count = 0  #Frame count of current vid
     
@@ -112,6 +113,7 @@ class Gamestate:
 
     def __init__(self):
         self.place = 0
+        self.lap = 0
         self.count = 0
         self.lastGivenItem = ""
         
@@ -146,6 +148,7 @@ class Gamestate:
     #Reset specific vars after race end / blackscreen that are specific to the race only
     def resetRaceVars(self):
         self.place = 0
+        self.lap = 0
         self.lastGivenItem = ""
 
         self.inNewItemRoulette = False
@@ -492,6 +495,20 @@ def main():
         writer.writerow(['Done with analysis on all videos - ' + str(datetime.datetime.now())])
 
 
+def getLap(image, gamestate):
+    image_lap = image[65:136, 960-560:1010-560]
+    mins = []
+    for lap in laps:
+        template = lap[1]
+        method = lap[2]
+        res = cv2.matchTemplate(image_lap, template, method)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        #print(min_val)
+        mins.append(min_val)
+    #Just always get lap, easy to fix post processing if needed
+    gamestate.lap = mins.index(min(mins)) + 1   #index of the min value + 1
+    print(gamestate.count, "Current lap:", gamestate.lap)
+
 
 #Although it doesn't seem like it, there is a lot of variance in the color of the places (capture card related?)
 #enough to where the darkest 1st has the same color as the brightest 2nd
@@ -665,14 +682,15 @@ def findBooItem(image, gamestate, fvs, fvsIndex):
         elif foundItemName is not None:
             gamestate.foundGivenItem = True
             getPlace(image, gamestate)  #get the current place
+            getLap(image, gamestate)  #get the current lap
             #Make sure we're not doing finish line glitch etc. where place could be 1 but get 8th place item
             if gamestate.place == 1 and foundItemName in ["TripleRedShells", "Lightning", "Star", "TripleMushrooms", "GoldenMushroom", "BlueShell"]:
                 gamestate.place = 8
             elif gamestate.place > 1 and gamestate.place < 8:
                 success, imagepl = fvs.read(fvsIndex - 5)  #if we're in a middle place, get the place closer to the first frame of the given item appearing on screen
                 getPlace(imagepl, gamestate)  #get the current place
-            print("Current place is:", gamestate.place)
-            tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
+            #print("Current place is:", gamestate.place)
+            tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.lap, gamestate.count, videoName]
             gamestate.lastGivenItem = foundItemName
             gamestate.lastItemBooItem = True
             with open('./stats/ItemStats.csv','a', newline='') as f:
@@ -744,6 +762,7 @@ def findGivenItem(image, gamestate, fvs, fvsIndex):
     else:
         gamestate.foundGivenItem = True
         getPlace(image, gamestate)  #get the current place
+        getLap(image, gamestate)  #get the current lap
         #Placement doesn't update in game fast enough - 3rd place getting blue shell is common even though its not possible
         #Therefore only get the place on the frame the item is given - since that's essentially a middle ground / average of places
         if gamestate.place == 1 and foundItemName in ["TripleRedShells", "Lightning", "Star", "TripleMushrooms", "GoldenMushroom", "BlueShell"]:
@@ -751,8 +770,8 @@ def findGivenItem(image, gamestate, fvs, fvsIndex):
         elif gamestate.place > 1 and gamestate.place < 8:  #want to get average because the place counter doesn't update very frequently
             success, imagepl = fvs.read(fvsIndex - 4)  #if we're in a middle place, get the place closer to the first frame of the given item appearing on screen (on fifth frame of item, go back 4 to first)
             getPlace(imagepl, gamestate)  #get the current place
-        print("Current place is:", gamestate.place)
-        tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.count, videoName]
+        #print("Current place is:", gamestate.place)
+        tmp = [gamestate.currentCourse, foundItemName, gamestate.place, gamestate.lap, gamestate.count, videoName]
         gamestate.lastGivenItem = foundItemName
         gamestate.lastItemBooItem = False
         with open('./stats/ItemStats.csv','a', newline='') as f:
@@ -1033,8 +1052,8 @@ def localSetup():
     #list of lists of item stats - could be list of tuples, i don't know
     global itemStats 
     itemStats = []  #[['ItemName', course (string), place (int), count (int) - current frame count],...]
-    global items, itemsBooFirst, places, courses, masks, itemNames
-    items, places, courses, masks, itemNames = setup.setup()
+    global items, itemsBooFirst, places, laps, courses, masks, itemNames
+    items, places, laps, courses, masks, itemNames = setup.setup()
     itemsBooFirst = [items[12]] + items[:12] + items[13:]
     global blackScreen 
     blackScreen = cv2.imread("./otherPics/" + 'black.png')

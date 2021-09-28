@@ -21,6 +21,10 @@ Usage (preferred):
 -Navigate to root folder in powershell
 -py main.py
 
+DATA OUTPUT FORMAT:
+Course, Item, Place, Lap, Frame#, Video File Title
+e.g. KoopaTroopaBeach,QuadBananas,1,3,162350,2021-07-17 17-44-28.mkv
+
 Flowchart:
 1. Search for a course start screen - every 80 frames check if it relates to a start screen
     - you are at the starting line not moving for at least 80 frames
@@ -240,16 +244,20 @@ class FileVideoStream:
                 #print("Reading Frame", i)
                 return True, self.Frames[i]
             except:
-                print("HAVEN'T READ THE REQUESTED FRAME YET FROM THE VIDEO!-----------------------------------------")
-                print("waiting until we're back up to", int((self.maxNumFrames * .5 )), "read frames")
+                print("Requested frame is #", i+1,"in the list, but we have only read",len(self.Frames),"frames")
+                print("waiting 2 more seconds...")
+                time.sleep(2.0)
+                print("Buffered to", len(self.Frames),"frames")
+                #print("HAVEN'T READ THE REQUESTED FRAME YET FROM THE VIDEO!-----------------------------------------")
+                #print("waiting until we're back up to", int((self.maxNumFrames * .5 )), "read frames")
                 #print("waiting until we're back up to", self.maxNumFrames, "read frames")
                 #while self.notFull():
-                print("Sleeping", round((self.timeToFull * (1-(len(self.Frames) / self.maxNumFrames))) * .5, 2), "seconds")  #time it takes to fill half of the missing frames
-                time.sleep(round((self.timeToFull * (1-(len(self.Frames) / self.maxNumFrames))) * .7, 2))
-                while len(self.Frames) < int((self.maxNumFrames * .7 )):   #less than 70% full
-                    time.sleep(0.1)
-                    if self.stopped:  #if in this loop at end of video but there's no more frames and we stopped
-                        break
+                #print("Sleeping", round((self.timeToFull * (1-(len(self.Frames) / self.maxNumFrames))) * .5, 2), "seconds")  #time it takes to fill half of the missing frames
+                #time.sleep(round((self.timeToFull * (1-(len(self.Frames) / self.maxNumFrames))) * ., 2))
+                #while (len(self.Frames) < i):
+                #    time.sleep(0.1)
+                if self.stopped:  #if in this loop at end of video but there's no more frames and we stopped
+                    break
                 #print("Done. We can now continue")
 
     def notFull(self):
@@ -558,6 +566,7 @@ def findCourse(image, gamestate, fvs, fvsIndex):
     print(gamestate.count, "Searching for course...")
     for indexVal in potentialNextCourses:  #for each of the selected potential next courses
         course = courses[indexVal]
+        #print(course[0])
         template = course[1]
         #cut top off lap / time because then we can add 30 frames to the window
         template = template[150:, :]

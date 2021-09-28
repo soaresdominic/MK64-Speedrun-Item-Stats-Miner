@@ -8,6 +8,10 @@ Requirements:
 * opencv-python (cv2)
 * psutil
 
+Data Output Format (csv):\
+Course, Item, Place, Lap, Frame#, Video File Title\
+e.g. KoopaTroopaBeach,QuadBananas,1,3,162350,2021-07-17 17-44-28.mkv
+
 Before Running:
 * Create videoRanges file videoRanges.csv in root folder, using format below. minutes are integers and can be 0 or after video ends. put a 1 minute buffer to each time 5,10 -> 4,11
 
